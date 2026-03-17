@@ -181,11 +181,11 @@ WCY's design is consistent across three independent theoretical frameworks:
 ```bibtex
 @techreport{wcy2026,
   title  = {WCY: A Token-Native Reasoning Format and Epistemic Substrate for AI Systems},
-  author = {WCY Research},
+  author = {Won Chul Yang},
   year   = {2026},
   month  = {March},
   note   = {Position Paper v2.0},
-  url    = {https://github.com/wcy-research/wcy}
+  url    = {https://github.com/ycmath/wcy}
 }
 ```
 
