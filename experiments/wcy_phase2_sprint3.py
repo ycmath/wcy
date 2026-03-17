@@ -7,20 +7,20 @@
 
 Experiments:
   E2-D: Verification Overhead Reduction
-        — 생성+검증 2단계 파이프라인의 reformatting 비용 측정
+        -- measure reformatting cost of a generate+verify 2-stage pipeline
   E4-A: MCP Message Format Replacement
-        — 실제 MCP 교환 사이클 JSON vs WCY 토큰 비교
+        -- real MCP exchange cycle: JSON vs WCY token comparison
   E1-C: Model Size Ladder
-        — Claude Haiku vs Sonnet 동일 태스크 포맷 적응력 비교
+        -- Claude Haiku vs Sonnet: format adaptation on identical tasks
 
-측정 방법 (공정한 비교):
-  - WCY 스펙 (~220 tokens)은 시스템 프롬프트에 포함되지만
-    측정에서 제외함 (세션 고정 비용 = amortized overhead)
-  - 측정 대상: payload tokens = input_tokens - count(system_prompt)
-  - JSON 조건도 동일하게 system prompt 토큰 제외
+Measurement (fair comparison):
+  - WCY spec (~220 tokens) included in system prompt but
+    excluded from measurement (fixed session cost = amortized overhead)
+  - measured: payload tokens = input_tokens - count(system_prompt)
+  - JSON condition: system prompt tokens excluded equally
 
-실행 환경: Colab Pro (Python 3.10+)
-필요: ANTHROPIC_API_KEY (코드 내 직접 입력)
+Execution: Colab Pro (Python 3.10+)
+Requires: ANTHROPIC_API_KEY (direct entry in code)
 """
 
 ###############################################################
@@ -38,7 +38,7 @@ import tiktoken
 enc = tiktoken.get_encoding("cl100k_base")
 count = lambda t: len(enc.encode(str(t)))
 
-# ↓↓↓ 여기에 API 키를 직접 입력하세요 ↓↓↓
+# ↓↓↓ Insert your API key here ↓↓↓
 API_KEY = "sk-ant-api03-YOUR_KEY_HERE"
 # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
@@ -50,7 +50,7 @@ print("✓ Setup: API=ON")
 SONNET = "claude-sonnet-4-20250514"
 HAIKU  = "claude-haiku-4-5-20251001"
 
-# ── WCY Spec (시스템 프롬프트 고정 비용 — 측정 제외) ──────────────
+# ── WCY Spec (fixed system prompt cost -- excluded from measurement) ──────────────
 WCY_SPEC = dedent("""
 WCY FORMAT SPEC:
 PHASE MARKERS (line-start, followed by space):
@@ -73,8 +73,8 @@ print(f"WCY spec (excluded from measurement): {WCY_SPEC_TOKENS} tokens")
 
 def call_api(system, user, model=SONNET, max_tokens=1000, label=""):
     """
-    API 호출 + payload 토큰만 반환.
-    payload_in = input_tokens - system_prompt_tokens (스펙 주입 비용 제외)
+    API call + return payload tokens only.
+    payload_in = input_tokens - system_prompt_tokens (spec injection cost excluded)
     """
     msg = client.messages.create(
         model=model,
@@ -86,35 +86,35 @@ def call_api(system, user, model=SONNET, max_tokens=1000, label=""):
     raw_out = msg.usage.output_tokens
     text    = msg.content[0].text
     sys_tok = count(system)
-    payload_in = raw_in - sys_tok   # 스펙 제외한 실제 페이로드
+    payload_in = raw_in - sys_tok   # actual payload with spec excluded
     return text, payload_in, raw_out, raw_in
 
 
 ###############################################################
 # CELL 2: E2-D — Verification Overhead Reduction
 #
-# 가설: WCY의 phase marker가 이미 의도를 인코딩하므로
-#       검증 에이전트가 reformatting 없이 바로 처리 가능.
-#       → 검증 단계 입력 토큰 절감.
+# hypothesis: WCY phase markers already encode intent,
+#       so verification agent can process directly without reformatting.
+#       -> savings on verification stage input tokens.
 #
-# 설계:
+# Design:
 #   Generator → code + annotations
 #   Verifier  → receives Generator output, produces verdict
 #
-#   JSON 경로: Generator → JSON metadata → Verifier parses JSON
-#   WCY 경로:  Generator → WCY lines    → Verifier reads WCY directly
+#   JSON path: Generator -> JSON metadata -> Verifier parses JSON
+#   WCY path:  Generator -> WCY lines    -> Verifier reads WCY directly
 #
-# 공정한 비교:
-#   - Generator 시스템 프롬프트 토큰 제외
-#   - Verifier 시스템 프롬프트 토큰 제외
-#   - 측정: Generator output tokens + Verifier payload input tokens
+# fair comparison:
+#   - Generator system prompt tokens excluded
+#   - Verifier system prompt tokens excluded
+#   - measure: Generator output tokens + Verifier payload input tokens
 ###############################################################
 
 print("\n" + "=" * 70)
 print("  E2-D: VERIFICATION OVERHEAD REDUCTION")
 print("=" * 70)
 
-# ── 5개 코드 태스크 ───────────────────────────────────────────
+# ── 5 code tasks ───────────────────────────────────────────
 CODE_TASKS = [
     {
         "name": "fibonacci",
@@ -143,7 +143,7 @@ CODE_TASKS = [
     }
 ]
 
-# ── 시스템 프롬프트 ───────────────────────────────────────────
+# ── system prompts ───────────────────────────────────────────
 
 GEN_SYS_JSON = """You are a code generation agent. Given a coding task:
 1. Write the Python code
@@ -176,7 +176,7 @@ Analyze and output a WCY verdict.
 {WCY_SPEC}
 Use from=N to reference specific generator output lines you are verifying."""
 
-# ── 실험 실행 ─────────────────────────────────────────────────
+# ── run experiment ─────────────────────────────────────────────────
 e2d_results = []
 
 print(f"\n{'Task':<18} {'Gen out':>8} {'Ver payload_in':>15} {'Total':>8}  (JSON vs WCY)")
@@ -185,7 +185,7 @@ print("─" * 70)
 for task in CODE_TASKS:
     row = {"name": task["name"]}
 
-    # ── JSON 경로 ─────────────────────────────────────────────
+    # ── JSON path ─────────────────────────────────────────────
     gen_json_resp, gen_json_pay_in, gen_json_out, _ = call_api(
         GEN_SYS_JSON, task["prompt"], label=f"{task['name']}_gen_json"
     )
@@ -199,7 +199,7 @@ for task in CODE_TASKS:
     )
     time.sleep(0.5)
 
-    # ── WCY 경로 ─────────────────────────────────────────────
+    # ── WCY path ─────────────────────────────────────────────
     gen_wcy_resp, gen_wcy_pay_in, gen_wcy_out, _ = call_api(
         GEN_SYS_WCY, task["prompt"], label=f"{task['name']}_gen_wcy"
     )
@@ -213,8 +213,8 @@ for task in CODE_TASKS:
     )
     time.sleep(0.5)
 
-    # 총합: Generator output tokens + Verifier payload input tokens
-    # (Generator의 payload_in은 비교 대상 아님 — 동일 프롬프트이므로)
+    # total: Generator output tokens + Verifier payload input tokens
+    # (Generator payload_in not compared -- same prompt for both)
     json_total = gen_json_out + ver_json_pay_in + ver_json_out
     wcy_total  = gen_wcy_out  + ver_wcy_pay_in  + ver_wcy_out
     savings    = (json_total - wcy_total) / json_total * 100
@@ -234,7 +234,7 @@ for task in CODE_TASKS:
           f"J:{ver_json_pay_in:>4}/W:{ver_wcy_pay_in:>4}  "
           f"J:{json_total:>4}/W:{wcy_total:>4}  {savings:>+5.1f}%")
 
-# 요약
+# summary
 print(f"\n{'='*70}")
 print(f"  E2-D SUMMARY (payload tokens, spec excluded)")
 print(f"  {'Metric':<35} {'JSON':>7} {'WCY':>7} {'Savings':>9}")
@@ -259,15 +259,15 @@ for label, jv, wv in [
     print(f"  {label:<35} {jv:>7.0f} {wv:>7.0f} {sav:>+8.1f}%")
 
 avg_sav = (avg_jtot - avg_wtot) / avg_jtot * 100
-print(f"\n  성공 기준: Verifier input ≥20% 절감 → {'✓ PASS' if (avg_ver_jin-avg_ver_win)/avg_ver_jin*100 >= 20 else '✗ FAIL'}")
-print(f"  핵심 질문: WCY에서 from= 역추적이 검증 구조화에 사용되는가?")
+print(f"\n  success criteria: Verifier input ≥20% savings → {'✓ PASS' if (avg_ver_jin-avg_ver_win)/avg_ver_jin*100 >= 20 else '✗ FAIL'}")
+print(f"  Key question: does from= backtracing structure the verification output?")
 
-# WCY verifier 응답 샘플 출력
-print(f"\n  WCY Verifier 응답 샘플 ({e2d_results[0]['name']}):")
+# WCY verifier response sample output
+print(f"\n  WCY Verifier response sample ({e2d_results[0]['name']}):")
 for line in e2d_results[0]['ver_wcy_resp'].split('\n')[:10]:
     print(f"    {line}")
 
-print(f"\n  from= 사용 횟수 (WCY verifier, 5 tasks):")
+print(f"\n  from= usage count (WCY verifier, 5 tasks):")
 for r in e2d_results:
     n_from = len(re.findall(r'from=', r['ver_wcy_resp']))
     print(f"    {r['name']:<18}: {n_from} from= references")
@@ -276,17 +276,17 @@ for r in e2d_results:
 ###############################################################
 # CELL 3: E4-A — MCP Message Format Replacement
 #
-# 실제 MCP 교환 사이클 10개를 JSON vs WCY로 표현.
-# API 호출 불필요 — 순수 토큰 카운트 비교.
-# 각 MCP 메시지 유형별로 구조화된 비교.
+# 10 real MCP exchange cycles represented as JSON vs WCY.
+# No API calls needed -- pure token count comparison.
+# Structured comparison per MCP message type.
 ###############################################################
 
 print("\n\n" + "=" * 70)
 print("  E4-A: MCP MESSAGE FORMAT REPLACEMENT")
 print("=" * 70)
-print("  [토큰 카운트만 — API 불필요]")
+print("  [token counts only -- no API required]")
 
-# ── MCP 메시지 쌍 정의 (JSON vs WCY 등가 표현) ────────────────
+# ── MCP message pairs (JSON vs WCY equivalent) ────────────────
 
 MCP_EXCHANGES = [
 
@@ -459,7 +459,7 @@ MCP_EXCHANGES = [
     },
 ]
 
-# ── 토큰 카운트 ───────────────────────────────────────────────
+# ── token counts ───────────────────────────────────────────────
 print(f"\n  {'Exchange':<45} {'JSON':>7} {'WCY':>7} {'Savings':>9}")
 print(f"  {'─'*72}")
 
@@ -471,14 +471,14 @@ for ex in MCP_EXCHANGES:
     e4a_results.append({"name": ex["name"], "json": tj, "wcy": tw, "sav": sav})
     print(f"  {ex['name']:<45} {tj:>7} {tw:>7} {sav:>+8.1f}%")
 
-# 합계 및 요약
+# totals and summary
 total_j = sum(r["json"] for r in e4a_results)
 total_w = sum(r["wcy"]  for r in e4a_results)
 total_sav = (total_j - total_w) / total_j * 100
 print(f"  {'─'*72}")
 print(f"  {'TOTAL (10 exchanges)':<45} {total_j:>7} {total_w:>7} {total_sav:>+8.1f}%")
 
-# 카테고리별 분류
+# categorise by type
 request_idx  = [0, 2, 4, 5, 7, 8]  # requests
 response_idx = [1, 3]               # responses
 error_idx    = [6]
@@ -494,11 +494,11 @@ for cat_name, idxs in [
     cw = sum(e4a_results[i]["wcy"]  for i in idxs)
     print(f"  {cat_name:<40}: {(cj-cw)/cj*100:>+6.1f}%  (J={cj}, W={cw})")
 
-print(f"\n  성공 기준: 전체 MCP 교환 ≥40% 절감 → {'✓ PASS' if total_sav >= 40 else '✗ FAIL'}")
-print(f"  성공 기준: 스키마(tools/list) ≥50% 절감 → {'✓ PASS' if e4a_results[1]['sav'] >= 50 else '✗ FAIL'}")
+print(f"\n  success criteria: full MCP exchange ≥40% savings -> {'✓ PASS' if total_sav >= 40 else '✗ FAIL'}")
+print(f"  success criteria: schema (tools/list) ≥50% savings -> {'✓ PASS' if e4a_results[1]['sav'] >= 50 else '✗ FAIL'}")
 
-# ── API로 파싱 정확도 검증 (선택) ─────────────────────────────
-print(f"\n[WCY MCP 파싱 정확도 검증 — API]")
+# ── optional: parsing accuracy verification via API ─────────────────────────────
+print(f"\n[WCY MCP parsing accuracy verification -- API]")
 
 MCP_PARSE_SYS_JSON = """You are an MCP message parser. Given JSON-RPC messages, extract:
 1. For each message: method/type, id, tool name (if applicable), parameters/results
@@ -509,7 +509,7 @@ MCP_PARSE_SYS_WCY = f"""You are an MCP message parser. Given WCY-encoded MCP mes
 Output as a simple list.
 {WCY_SPEC}"""
 
-# 전체 10개 교환을 하나의 입력으로 합치기
+# combine all 10 exchanges into a single input
 all_json = "\n---\n".join(ex["json"] for ex in MCP_EXCHANGES)
 all_wcy  = "\n---\n".join(ex["wcy"]  for ex in MCP_EXCHANGES)
 
@@ -526,7 +526,7 @@ wcy_resp, wcy_pay_in, wcy_out, _ = call_api(
 print(f"  Parse task — payload input:  JSON={json_pay_in}  WCY={wcy_pay_in}  Δ={(json_pay_in-wcy_pay_in)/json_pay_in*100:+.1f}%")
 print(f"  Parse task — output tokens:  JSON={json_out}  WCY={wcy_out}")
 
-# 10개 항목 모두 추출했는지 대략 확인
+# rough check that all 10 items were extracted
 def count_extractions(resp):
     nums = set(re.findall(r'\b([1-9]|10)\b', resp))
     ids  = re.findall(r'id[=: ]+(\d+)', resp.lower())
@@ -540,12 +540,12 @@ print(f"  Extracted IDs found:         JSON≈{json_ex}/10  WCY≈{wcy_ex}/10")
 ###############################################################
 # CELL 4: E1-C — Model Size Ladder
 #
-# 동일 태스크를 Haiku vs Sonnet으로 실행.
-# 측정: (1) WCY 형식 준수율, (2) 포맷별 토큰 절감 패턴,
-#       (3) 소형 모델에서 WCY 이득이 더 큰지 (용량 절약 가설)
+# run identical tasks with Haiku vs Sonnet.
+# measure: (1) WCY format compliance rate, (2) per-format token savings pattern,
+#       (3) does smaller model show larger WCY gains? (capacity-savings hypothesis)
 #
-# 공정한 비교:
-#   - 동일 시스템 프롬프트, 동일 payload
+# fair comparison:
+#   - identical system prompt, identical payload
 #   - payload_in = input_tokens - system_tokens
 ###############################################################
 
@@ -553,7 +553,7 @@ print("\n\n" + "=" * 70)
 print("  E1-C: MODEL SIZE LADDER — Haiku vs Sonnet")
 print("=" * 70)
 
-# ── 테스트 케이스 (Phase 1과 동일 난이도 중간) ─────────────────
+# ── test cases (same difficulty as Phase 1 medium) ─────────────────
 TEST_CASES_E1C = [
     {
         "name": "Read — medium",
@@ -660,7 +660,7 @@ for model_name, model_id in [("Sonnet", SONNET), ("Haiku", HAIKU)]:
         resp_w, pay_in_w, out_w, _ = call_api(sys_w, user_w, model=model_id, max_tokens=400, label=f"{model_name}_{tc['name']}_wcy")
         time.sleep(0.5)
 
-        # 정확도 체크 (read/infer만)
+        # accuracy check (read/infer only)
         acc_j = acc_w = None
         if tc["answer_key"]:
             n_j, tot = check_answer(resp_j, tc["answer_key"])
@@ -668,7 +668,7 @@ for model_name, model_id in [("Sonnet", SONNET), ("Haiku", HAIKU)]:
             acc_j = n_j / tot * 100
             acc_w = n_w / tot * 100
 
-        # WCY 형식 준수율 (generate만)
+        # WCY format compliance rate (generate only)
         wcy_compliance = None
         if tc["type"] == "generate":
             valid_lines = sum(1 for l in resp_w.split('\n')
@@ -692,7 +692,7 @@ for model_name, model_id in [("Sonnet", SONNET), ("Haiku", HAIKU)]:
 
     e1c_results.extend(model_rows)
 
-# ── 모델별 비교 요약 ──────────────────────────────────────────
+# ── per-model comparison summary ──────────────────────────────────────────
 print(f"\n{'='*70}")
 print(f"  E1-C SUMMARY: Haiku vs Sonnet")
 print(f"  {'Task':<22} {'Sonnet in_sav':>14} {'Haiku in_sav':>13} {'Sonnet out_sav':>15} {'Haiku out_sav':>14}")
@@ -709,7 +709,7 @@ for tc in TEST_CASES_E1C:
         h_sav_out = (h["out_j"]-h["out_w"])/h["out_j"]*100 if h["out_j"]>0 else 0
         print(f"  {tc['name']:<22} {s_sav_in:>+13.1f}% {h_sav_in:>+12.1f}% {s_sav_out:>+14.1f}% {h_sav_out:>+13.1f}%")
 
-# WCY 형식 준수율 비교
+# WCY format compliance rate comparison
 print(f"\n  WCY format compliance (generate task):")
 for model_name in ["Sonnet", "Haiku"]:
     rows = [r for r in e1c_results if r["model"]==model_name and r["wcy_compliance"] is not None]
@@ -717,7 +717,7 @@ for model_name in ["Sonnet", "Haiku"]:
         avg_c = sum(r["wcy_compliance"] for r in rows) / len(rows)
         print(f"    {model_name}: {avg_c:.1f}%")
 
-# 정확도 비교
+# accuracy comparison
 print(f"\n  Answer accuracy (read+infer tasks):")
 for model_name in ["Sonnet", "Haiku"]:
     rows = [r for r in e1c_results if r["model"]==model_name and r["acc_j"] is not None]
@@ -726,7 +726,7 @@ for model_name in ["Sonnet", "Haiku"]:
         avg_w = sum(r["acc_w"] for r in rows) / len(rows)
         print(f"    {model_name}: JSON={avg_j:.0f}%  WCY={avg_w:.0f}%  Δ={avg_w-avg_j:+.0f}%")
 
-print(f"\n  성공 기준: 두 모델 모두 WCY 정확도 ≥90%")
+print(f"\n  success criteria: both models WCY accuracy ≥90%")
 for model_name in ["Sonnet", "Haiku"]:
     rows = [r for r in e1c_results if r["model"]==model_name and r["acc_w"] is not None]
     if rows:
@@ -743,25 +743,25 @@ print("  SPRINT 3 — FINAL SUMMARY")
 print("═" * 70)
 
 print("""
-측정 방법:
-  - WCY 스펙 주입 비용(~220 tokens)은 모든 실험에서 측정 제외
+measurement method:
+  - WCY spec injection cost (~220 tokens) excluded from measurement in all experiments
   - payload_in = input_tokens - count(system_prompt)
-  - 동일 시스템 프롬프트 제외 원칙을 JSON/WCY 양 조건에 동등 적용
+  - same system prompt exclusion principle applied equally to JSON/WCY conditions
 
-실험 결과:
-  E2-D: Generator → Verifier 파이프라인
-        핵심 질문: WCY from= 역추적이 검증 단계를 구조화하는가?
-        (결과 위 참조)
+experiment results:
+  E2-D: Generator → Verifier pipeline
+        Key question: does WCY from= backtracing structure the verification stage?
+        (see results above)
 
-  E4-A: MCP 교환 10개 토큰 비교
-        tools/list 스키마: 단일 최대 절감 항목
-        (결과 위 참조)
+  E4-A: MCP exchange 10-type token comparison
+        tools/list schema: single largest savings item
+        (see results above)
 
   E1-C: Haiku vs Sonnet
-        소형 모델에서 WCY 이득이 더 큰가? (용량 절약 가설)
-        (결과 위 참조)
+        do smaller models show larger WCY gains? (capacity-savings hypothesis)
+        (see results above)
 
-다음 단계:
-  모든 Sprint 결과 통합 → Position Paper v1.1 (cross-model 검증 섹션 추가)
-  또는: ASMT 통합 경로 (경로 B) 개시
+next steps:
+  integrate all Sprint results -> Position Paper v1.1 (add cross-model verification section)
+  or: begin ASMT integration path (path B)
 """)
