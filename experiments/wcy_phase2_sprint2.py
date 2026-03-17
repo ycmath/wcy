@@ -6,17 +6,17 @@
 ═══════════════════════════════════════════════════════════════
 
 Experiments:
-  E3-A: Void-B (?) Utilization — WCY 고유 미탐 후보 처리 검증
-  E2-C: Shared State Accumulation — 3에이전트 순차 침전 시뮬레이션
-  E1-B: Reference Chain Depth — from= N-hop 추적 정확도
+  E3-A: Void-B (?) Utilization -- validates WCY gap-marker handling
+  E2-C: Shared State Accumulation -- 3-agent sequential shared-state simulation
+  E1-B: Reference Chain Depth -- from= N-hop tracing accuracy
 
-성공 기준:
-  E3-A: 에이전트가 ? 마커를 인식하고 처리 ≥80%
-  E2-C: 에이전트가 선행 침전을 올바르게 참조 ≥90%
-  E1-B: from= 체인 추적 정확도, 깊이 5까지 유지
+Success criteria:
+  E3-A: agent recognises and handles ? markers ≥80%
+  E2-C: agent correctly references prior observations ≥90%
+  E1-B: from= chain tracing accuracy maintained up to depth 5
 
-실행 환경: Colab Pro (Python 3.10+)
-필요: ANTHROPIC_API_KEY (Colab 시크릿)
+Execution: Colab Pro (Python 3.10+)
+Requires: ANTHROPIC_API_KEY (Colab secret or direct entry)
 """
 
 ###############################################################
@@ -33,7 +33,7 @@ import tiktoken
 
 enc = tiktoken.get_encoding("cl100k_base")
 
-# ↓↓↓ 여기에 API 키를 직접 입력하세요 ↓↓↓
+# ↓↓↓ Insert your API key here ↓↓↓
 API_KEY = "sk-ant-api03-YOUR_KEY_HERE"
 # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
@@ -62,7 +62,7 @@ def call_api(system, user, max_tokens=1500, label=""):
     return text, in_tok, out_tok
 
 
-# ── WCY Spec (시스템 프롬프트용, ~140 tokens) ─────────────────
+# ── WCY Spec (for system prompt, ~140 tokens) ─────────────────
 WCY_SPEC = dedent("""
 WCY FORMAT SPEC (brief):
 PHASE MARKERS (line-start):
@@ -91,18 +91,18 @@ print(f"WCY spec tokens: {count(WCY_SPEC)}")
 
 
 ###############################################################
-# CELL 2: E3-A — Void-B (?) Utilization
+# CELL 2: E3-A -- Void-B (?) Utilization
 #
-# 목표: ?tag 마커가 있는 WCY 문서를 주고 "미해결 항목을 처리하라"
-#      에이전트가 ? 마커를 인식 → hint= 추적 → 처리 여부 측정
-#      비교: 동일 정보를 JSON으로 (명시적 gap 표시 없음)
+# Goal: give the agent a WCY doc with ?tags, ask it to "handle unresolved items"
+#      agent recognises ? markers -> hint= trace -> handle, measure
+#      comparison: same info as JSON (no explicit gap markers)
 ###############################################################
 
 print("\n" + "=" * 70)
 print("  E3-A: VOID-B (?) UTILIZATION")
 print("=" * 70)
 
-# ── 3가지 케이스 정의 ──────────────────────────────────────────
+# ── 3 case definitions ──────────────────────────────────────────
 
 VOID_CASES = [
     {
@@ -185,26 +185,26 @@ VOID_CASES = [
     }
 ]
 
-# ── 평가 함수 ─────────────────────────────────────────────────
+# ── Evaluation functions ─────────────────────────────────────────
 
 def count_void_markers(wcy_text):
-    """WCY 입력에서 ?tag 수 세기."""
+    """Count ?tag markers in a WCY input."""
     return sum(1 for line in wcy_text.split('\n')
                if line.strip().startswith(': ?') or line.strip().startswith(': ?'))
 
 def score_void_resolution(response, void_tags):
     """
-    LLM 응답에서 void 처리 여부 평가.
+    Evaluate void handling in an LLM response.
     void_tags: ['primary_diagnosis', 'stroke_type', ...]
-    반환: (resolved_count, total, details)
+    Returns: (resolved_count, total, details)
     """
     resp_lower = response.lower()
     resolved = []
     for tag in void_tags:
         tag_clean = tag.replace('_', ' ')
-        # 1) WCY >나 : 줄에 태그가 등장하는지
+        # 1) check if tag appears in a WCY > or : line
         in_wcy = bool(re.search(rf'[>:] .*{re.escape(tag)}', response))
-        # 2) 자연어로 다룬 경우
+        # 2) check if handled in natural language
         in_nl  = tag_clean in resp_lower or tag.replace('_','') in resp_lower
         resolved.append({
             "tag": tag,
@@ -233,7 +233,7 @@ for case in VOID_CASES:
     print(f"  {case['name']:<28} {t_wcy:>10} {t_json:>11} {diff:>+7}")
     e3a_token_results.append({"case": case["name"], "wcy": t_wcy, "json": t_json})
 
-# ── API 실험 ──────────────────────────────────────────────────
+# ── API experiment ──────────────────────────────────────────────────
 if USE_API:
     print("\n[LLM Experiment — WCY vs JSON void resolution]")
 
@@ -241,10 +241,10 @@ if USE_API:
     for case in VOID_CASES:
         print(f"\n  ── {case['name']} ──")
 
-        # void 태그 추출
+        # extract void tags
         void_tags = re.findall(r':\s+\?(\w+)', case["wcy"])
 
-        # WCY 조건
+        # WCY condition
         wcy_resp, wcy_in, wcy_out = call_api(
             VOID_SYSTEM_WCY, case["wcy"], max_tokens=1200,
             label=f"{case['name']} WCY"
@@ -257,7 +257,7 @@ if USE_API:
                 mode = "WCY-line" if d["in_wcy_line"] else ("NL" if d["in_natural_language"] else "MISS")
                 print(f"      {icon} ?{d['tag']:<25} [{mode}]")
 
-        # JSON 조건
+        # JSON condition
         json_resp, json_in, json_out = call_api(
             VOID_SYSTEM_JSON, case["json"], max_tokens=1200,
             label=f"{case['name']} JSON"
@@ -277,7 +277,7 @@ if USE_API:
             })
         time.sleep(1)
 
-    # 요약
+    # summary
     if e3a_results:
         print(f"\n{'='*70}")
         print(f"  E3-A SUMMARY")
@@ -296,23 +296,23 @@ if USE_API:
         avg_json = total_json / total_voids * 100
         print(f"  {'─'*55}")
         print(f"  {'OVERALL':<30} {total_voids:>6} {avg_wcy:>6.0f}% {avg_json:>6.0f}% {avg_wcy-avg_json:>+5.0f}%")
-        print(f"\n  성공 기준: WCY ≥80% → {'✓ PASS' if avg_wcy >= 80 else '✗ FAIL'}")
+        print(f"\n  success criteria: WCY ≥80% → {'✓ PASS' if avg_wcy >= 80 else '✗ FAIL'}")
 
 
 ###############################################################
-# CELL 3: E2-C — Shared State Accumulation
+# CELL 3: E2-C -- Shared State Accumulation
 #
-# 3 에이전트(Intake → Diagnostician → Treatment)가
-# 같은 환자 케이스에 순차적으로 침전을 쌓음.
-# 각 라운드는 이전 라운드의 출력을 입력으로 받음.
-# 측정: 누적 컨텍스트 크기, 선행 침전 참조 정확도
+# 3 agents (Intake -> Diagnostician -> Treatment)
+# sequentially accumulate observations on the same patient case.
+# each round receives the prior round's output as input.
+# measure: accumulated context size, prior observation reference accuracy
 ###############################################################
 
 print("\n\n" + "=" * 70)
 print("  E2-C: SHARED STATE ACCUMULATION")
 print("=" * 70)
 
-# ── 초기 케이스 정의 ─────────────────────────────────────────
+# ── initial case definition ─────────────────────────────────────
 
 CASE_BASE = {
     "id": "C-2026-007",
@@ -327,7 +327,7 @@ CASE_BASE = {
     "meds": [{"name": "amlodipine", "dose": 5}, {"name": "rosuvastatin", "dose": 20}]
 }
 
-# ── WCY 초기 입력 ────────────────────────────────────────────
+# ── WCY initial input ────────────────────────────────────────────
 
 ROUND1_WCY_INPUT = dedent(f"""
 ~ context  case={CASE_BASE['id']}
@@ -349,7 +349,7 @@ ROUND1_JSON_INPUT = json.dumps({
     "medications": CASE_BASE["meds"]
 }, indent=2)
 
-# ── 에이전트 시스템 프롬프트 ──────────────────────────────────
+# ── agent system prompts ──────────────────────────────────
 
 INTAKE_SYS_WCY = f"""{WCY_SPEC}
 
@@ -394,7 +394,7 @@ Synthesize all prior evidence and provide:
 Format as JSON."""
 
 def check_from_references(response_text, context_lines):
-    """from=N 참조가 유효한 라인 번호를 가리키는지 확인."""
+    """Check that from=N references point to a valid line number."""
     refs = re.findall(r'from=([\d,]+)', response_text)
     valid = invalid = 0
     details = []
@@ -418,7 +418,7 @@ print(f"\n[Token counts — initial input]")
 print(f"  WCY Round 1 input:  {count(ROUND1_WCY_INPUT):>6} tokens")
 print(f"  JSON Round 1 input: {count(ROUND1_JSON_INPUT):>6} tokens")
 
-# ── API 실험 ─────────────────────────────────────────────────
+# ── API experiment ─────────────────────────────────────────────────
 if USE_API:
     print("\n[3-Agent Pipeline Simulation]")
 
@@ -463,7 +463,7 @@ if USE_API:
         history["rounds"].append({"agent": "Treatment", "in": r3_in, "out": r3_out, "resp": r3_resp})
         print(f"    Round 3 Treatment:     in={r3_in:>5}  out={r3_out:>4}")
 
-        # from= 검증 (WCY만)
+        # validate from= (WCY only)
         if mode == 'wcy' and r3_resp:
             ctx_lines = count_non_empty_lines(r3_context)
             v_ok, v_bad, v_det = check_from_references(r3_resp, ctx_lines)
@@ -483,7 +483,7 @@ if USE_API:
     time.sleep(2)
     json_pipeline = run_pipeline('json')
 
-    # 비교 요약
+    # comparison summary
     print(f"\n{'='*70}")
     print(f"  E2-C SUMMARY: Token Accumulation")
     print(f"  {'Metric':<30} {'JSON':>8} {'WCY':>8} {'Savings':>9}")
@@ -505,15 +505,15 @@ if USE_API:
         total_refs = wcy_pipeline["from_valid"] + wcy_pipeline["from_invalid"]
         pct = wcy_pipeline["from_valid"] / max(total_refs, 1) * 100
         print(f"\n  from= validity: {wcy_pipeline['from_valid']}/{total_refs} ({pct:.0f}%)")
-        print(f"  성공 기준: ≥90% 참조 정확도 → {'✓ PASS' if pct >= 90 else '△ CHECK'}")
+        print(f"  success criteria: ≥90% reference accuracy → {'✓ PASS' if pct >= 90 else '△ CHECK'}")
 
 
 ###############################################################
-# CELL 4: E1-B — Reference Chain Depth (from= N-hop)
+# CELL 4: E1-B -- Reference Chain Depth (from= N-hop)
 #
-# from= 체인을 1-hop에서 12-hop까지 쌓아가며
-# LLM이 "최초 근거 사실이 무엇인가"를 올바르게 역추적하는지 측정.
-# 비교: JSON 중첩 참조 vs WCY flat from= 체인
+# build from= chains from 1-hop to 12-hop
+# test whether the LLM correctly traces back to the original source fact.
+# comparison: JSON nested reference vs WCY flat from= chain
 ###############################################################
 
 print("\n\n" + "=" * 70)
@@ -522,9 +522,9 @@ print("=" * 70)
 
 def make_wcy_chain(depth, domain="medical"):
     """
-    depth-hop WCY 추론 체인 생성.
-    각 줄은 이전 줄에서 from= 으로 파생됨.
-    반환: (wcy_text, answer_fact, line_count)
+    Generate a depth-hop WCY reasoning chain.
+    Each line derives from the prior line via from=.
+    Returns: (wcy_text, answer_fact, line_count)
     """
     if domain == "medical":
         seed_fact = "patient=Yoon  age=71  presented=ER  chief_complaint=syncope"
@@ -566,7 +566,7 @@ def make_wcy_chain(depth, domain="medical"):
         lines.append(f": {tag}={value}  from={prev_line}")
     wcy_text = "\n".join(lines)
 
-    # 정답: seed fact의 핵심 값
+    # ground truth: key value of the seed fact
     if domain == "medical":
         answer = "Yoon"  # patient name from seed
     else:
@@ -574,7 +574,7 @@ def make_wcy_chain(depth, domain="medical"):
     return wcy_text, answer, len(lines)
 
 def make_json_chain(depth, domain="medical"):
-    """동등한 JSON 중첩 참조 구조."""
+    """Equivalent JSON nested reference structure."""
     if domain == "medical":
         base = {
             "observation": {
@@ -607,7 +607,7 @@ def make_json_chain(depth, domain="medical"):
         obj[key] = val
     return json.dumps(obj, indent=2), answer
 
-# ── 토큰 카운트 (API 불필요) ───────────────────────────────────
+# ── token counts (no API required) ───────────────────────────────
 depths = [1, 2, 3, 5, 8, 12]
 print(f"\n[Token counts by chain depth — no API needed]")
 print(f"  {'Depth':>6} {'WCY tok':>9} {'JSON tok':>10} {'WCY/JSON':>10}")
@@ -623,7 +623,7 @@ for d in depths:
     print(f"  {d:>6} {t_wcy:>9} {t_json:>10} {ratio:>9.1f}%")
     chain_token_results.append({"depth": d, "wcy": t_wcy, "json": t_json})
 
-# ── API 실험 ─────────────────────────────────────────────────
+# ── API experiment ─────────────────────────────────────────────────
 if USE_API:
     print("\n[LLM Tracking Accuracy by Depth]")
 
@@ -663,7 +663,7 @@ Answer the question about the original source observation. Be brief — give onl
         })
         time.sleep(0.5)
 
-    # 요약
+    # summary
     print(f"\n{'='*70}")
     print(f"  E1-B SUMMARY")
     print(f"  {'Depth':>6} {'WCY':>6} {'JSON':>6}")
@@ -671,12 +671,12 @@ Answer the question about the original source observation. Be brief — give onl
     for r in e1b_results:
         print(f"  {r['depth']:>6} {'✓' if r['wcy_correct'] else '✗':>6} {'✓' if r['json_correct'] else '✗':>6}")
 
-    # 최대 정확 깊이 찾기
+    # find maximum accurate depth
     wcy_max_depth  = max((r["depth"] for r in e1b_results if r["wcy_correct"]),  default=0)
     json_max_depth = max((r["depth"] for r in e1b_results if r["json_correct"]), default=0)
-    print(f"\n  WCY 최대 정확 깊이: {wcy_max_depth}")
-    print(f"  JSON 최대 정확 깊이: {json_max_depth}")
-    print(f"  성공 기준: WCY ≥ 깊이 5 → {'✓ PASS' if wcy_max_depth >= 5 else '✗ FAIL'}")
+    print(f"\n  WCY max accurate depth: {wcy_max_depth}")
+    print(f"  JSON max accurate depth: {json_max_depth}")
+    print(f"  success criteria: WCY >= depth 5 -> {'✓ PASS' if wcy_max_depth >= 5 else '✗ FAIL'}")
 
 
 ###############################################################
@@ -688,19 +688,19 @@ print("  SPRINT 2 — FINAL SUMMARY")
 print("═" * 70)
 
 print("""
-실험 구성:
-  E3-A: Void-B (?) 처리 — 3케이스, 1/3/5 void markers, WCY vs JSON
-  E2-C: 공유 상태 축적 — 3에이전트 파이프라인, 침전 누적, from= 검증
-  E1-B: 참조 체인 깊이 — 1/2/3/5/8/12 hop, 역추적 정확도
+Experiment design:
+  E3-A: Void-B (?) handle -- 3 cases, 1/3/5 void markers, WCY vs JSON
+  E2-C: shared state accumulation -- 3-agent pipeline, observations accumulated, from= validation
+  E1-B: reference chain depth -- 1/2/3/5/8/12 hops, backtracing accuracy
 
-가설 (Sprint 2 성공 기준):
-  E3-A: LLM이 ?마커를 ≥80% 처리 → void-B는 WCY 고유 실용 기능
-  E2-C: 3라운드 from= 참조 ≥90% 유효 → 침전 체인 신뢰성
-  E1-B: WCY가 JSON보다 깊은 체인에서 더 정확 → flat from=의 우위
+Hypotheses (Sprint 2 success criteria):
+  E3-A: LLM handles ?markers >=80% -- void-B is a practical WCY feature
+  E2-C: 3-round from= references >=90% valid -- observation chain reliability
+  E1-B: WCY more accurate than JSON on deep chains -- flat from= advantage
 
-다음 단계:
-  Sprint 2 결과 확보 후:
-  → 모든 성공 기준 충족 시: Position Paper v0.1 → v1.0 업그레이드
-  → void-B 검증되면: ASMT 통합 경로 (경로 B) 개시 가능
-  → Sprint 3: E2-D (검증 오버헤드) + E1-C (모델 래더)
+Next steps:
+  After Sprint 2 results:
+  -> if all success criteria met: Position Paper v0.1 -> v1.0 upgrade
+  -> if void-B validated: ASMT integration path (path B) can begin
+  -> Sprint 3: E2-D (verification overhead) + E1-C (model ladder)
 """)
