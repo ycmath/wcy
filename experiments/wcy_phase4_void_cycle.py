@@ -44,7 +44,7 @@ except ImportError:
     print("⚠ wcy_parser.py를 같은 디렉토리에 업로드하세요")
 
 # ↓↓↓ API 키 직접 입력 ↓↓↓
-API_KEY = "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"
+API_KEY = "sk-ant-api03-YOUR_KEY_HERE"
 # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
 import anthropic
