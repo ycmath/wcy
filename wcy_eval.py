@@ -2,18 +2,18 @@
 """
 wcy_eval.py — WCY Evaluation Framework v1.0
 =============================================
-E1-C에서 드러난 문제: 키워드 매칭은 LLM 정확도를 과소평가.
-이 모듈은 세 축의 채점을 제공합니다:
+Addresses the E1-C finding: keyword matching underestimates LLM accuracy.
+This module provides three-axis scoring:
 
-  Axis S: Structural Score  — wcy_parser로 형식 준수 측정
-  Axis M: Meaning Score     — 임베딩 유사도로 의미 보존 측정
-  Axis P: Provenance Score  — from= 체인 유효성 측정
+  Axis S: Structural Score  — format compliance via wcy_parser
+  Axis M: Meaning Score     — semantic equivalence via LLM-as-judge
+  Axis P: Provenance Score  — from= chain validity
 
-사용법 (Colab):
+Usage (Colab):
   !pip install anthropic tiktoken -q
-  # wcy_parser.py 같은 디렉토리에 필요
+  # requires wcy_parser.py in the same directory
 
-실행: Colab Pro, ANTHROPIC_API_KEY 직접 입력
+Execution: Colab Pro, set ANTHROPIC_API_KEY directly
 """
 
 import subprocess, sys
@@ -25,8 +25,8 @@ from dataclasses import dataclass, field
 from typing import Any
 import numpy as np
 
-# wcy_parser import (같은 디렉토리에 있어야 함)
-# Colab에서는: from google.colab import files; files.upload() 후 import
+# wcy_parser must be in the same directory.
+# In Colab: from google.colab import files; files.upload() then import
 try:
     from wcy_parser import (
         parse_wcy, flatten, extract_voids, validate,
@@ -37,7 +37,7 @@ except ImportError:
     print("⚠ wcy_parser.py not found — upload it first")
     print("  In Colab: from google.colab import files; files.upload()")
 
-# ↓↓↓ API 키 직접 입력 ↓↓↓
+# ↓↓↓ Insert your API key here ↓↓↓
 API_KEY = "sk-ant-api03-YOUR_KEY_HERE"
 # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
@@ -50,25 +50,25 @@ print("✓ API ready")
 
 ###############################################################
 # AXIS S: Structural Score
-# wcy_parser로 형식 준수율을 정밀 측정
+# Precise format compliance measurement via wcy_parser
 ###############################################################
 
 @dataclass
 class StructuralScore:
-    """Axis S 결과."""
-    parse_rate: float         # 파싱 가능한 줄 비율 (0.0–1.0)
-    phase_valid: float        # 유효한 phase marker 줄 비율
-    depth_valid: float        # depth ≤ 2 준수율
-    from_valid: float         # from= 참조 유효율 (참조 있는 경우)
-    void_has_hint: float      # ?tag에 hint= 포함 비율
-    overall: float            # 종합 점수 (가중 평균)
+    """Axis S result."""
+    parse_rate: float         # fraction of lines parseable (0.0–1.0)
+    phase_valid: float        # fraction of lines with valid phase markers
+    depth_valid: float        # fraction of lines respecting depth ≤ 2
+    from_valid: float         # fraction of valid from= references (if any)
+    void_has_hint: float      # fraction of void-B markers that include hint=
+    overall: float            # weighted composite score
     details: dict = field(default_factory=dict)
 
 
 def score_structural(response_text: str) -> StructuralScore:
     """
-    LLM이 생성한 WCY 텍스트의 구조 점수 산출.
-    키워드 없이 형식만 채점.
+    Compute the structural score for LLM-generated WCY text.
+    Scores format compliance only — no keyword matching.
     """
     if not response_text.strip():
         return StructuralScore(0, 0, 0, 0, 0, 0)
@@ -78,7 +78,7 @@ def score_structural(response_text: str) -> StructuralScore:
     if total_lines == 0:
         return StructuralScore(0, 0, 0, 0, 0, 0)
 
-    # 파싱 시도
+    # attempt to parse
     try:
         parsed_lines = flatten(parse_wcy(response_text))
     except Exception:
@@ -86,7 +86,7 @@ def score_structural(response_text: str) -> StructuralScore:
 
     parse_rate = len(parsed_lines) / total_lines
 
-    # phase marker 유효성
+    # phase marker validity
     valid_phase = sum(
         1 for l in lines_raw
         if l.strip() and l.strip()[0] in '.!:>~'
@@ -94,10 +94,10 @@ def score_structural(response_text: str) -> StructuralScore:
     )
     phase_valid = valid_phase / total_lines
 
-    # depth 준수율
+    # depth compliance
     depth_valid = sum(1 for l in parsed_lines if l.depth <= 2) / max(len(parsed_lines), 1)
 
-    # from= 유효성
+    # from= reference validity
     lines_with_from = [l for l in parsed_lines if l.from_refs]
     if lines_with_from:
         all_nums = {l.line_num for l in parsed_lines}
@@ -109,9 +109,9 @@ def score_structural(response_text: str) -> StructuralScore:
         total_refs = sum(len(l.from_refs) for l in lines_with_from)
         from_valid = valid_refs / max(total_refs, 1)
     else:
-        from_valid = 1.0  # 참조 없으면 패널티 없음
+        from_valid = 1.0  # no from= references = no penalty
 
-    # void hint 포함율
+    # void-B hint inclusion rate
     void_lines = [l for l in parsed_lines if l.is_void]
     if void_lines:
         void_has_hint = sum(
@@ -120,7 +120,7 @@ def score_structural(response_text: str) -> StructuralScore:
     else:
         void_has_hint = 1.0
 
-    # 종합 점수 (가중)
+    # weighted composite
     overall = (
         parse_rate     * 0.30 +
         phase_valid    * 0.30 +
@@ -140,20 +140,20 @@ def score_structural(response_text: str) -> StructuralScore:
             'total_raw_lines': total_lines,
             'parsed_lines': len(parsed_lines),
             'lines_with_from': len(lines_with_from),
-            'void_lines': len(void_lines),
+            'void_lines':       len(void_lines),
         }
     )
 
 
 ###############################################################
 # AXIS M: Meaning Score
-# 임베딩 코사인 유사도로 의미 보존 측정
-# 키워드 매칭의 "Sonnet이 paraphrase해서 62%"를 해결
+# Semantic preservation measured via embedding similarity
+# Resolves the E1-C false negative (Sonnet paraphrases scored as 62% with keywords)
 ###############################################################
 
 # NOTE: get_embedding() / cosine_sim() are not used internally.
-# score_meaning() uses LLM-as-judge instead (more reliable than embedding similarity
-# for reasoning quality assessment). Kept as stubs for external use.
+# score_meaning() uses LLM-as-judge instead (more reliable than embedding
+# similarity for reasoning quality). Kept as stubs for external use.
 def get_embedding(text: str) -> list[float]:
     """Stub — Anthropic API has no dedicated embedding endpoint.
     Replace with OpenAI text-embedding-3-small or Cohere embed-v3 if needed."""
@@ -174,13 +174,13 @@ def score_meaning(
     model: str = SONNET,
 ) -> float:
     """
-    Axis M: LLM-as-judge로 의미 보존 점수 산출 (0.0–1.0).
+    Axis M: LLM-as-judge semantic equivalence score (0.0–1.0).
 
-    전략: 별도의 판정 LLM에게 "두 답변이 같은 질문에 같은 의미로 답하는가?"를
-    0.0~1.0 숫자로 평가하게 함. 키워드가 아닌 의미를 비교.
+    Strategy: a separate judge LLM scores whether two answers convey
+    the same meaning on a 0.0–1.0 scale. Compares semantics, not keywords.
 
-    이것이 E1-C의 false negative를 해결:
-    'elevated BP (165/100)' == 'hypertension' → judge가 1.0 부여
+    This resolves the E1-C false negative:
+    'elevated BP (165/100)' == 'hypertension' → judge returns 1.0
     """
     JUDGE_SYS = """You are a semantic equivalence judge.
 Given a question and two answers (A and B), score how semantically equivalent they are on a scale of 0.0 to 1.0.
@@ -209,19 +209,19 @@ Score how semantically equivalent Answer B is to Answer A."""
             messages=[{"role": "user", "content": user}]
         )
         raw = msg.content[0].text.strip()
-        # Primary: JSON parse
+        # primary: JSON parse
         try:
             data = json.loads(raw)
             return float(data.get("score", 0.0))
         except json.JSONDecodeError:
             pass
-        # Fallback: regex extract first float in 0.0-1.0 range
+        # fallback: regex-extract first float in [0.0, 1.0]
         m = re.search(r'(?:score["\s:]+)([\d.]+)', raw)
         if m:
             return min(max(float(m.group(1)), 0.0), 1.0)
-        # Last resort: scan for any float
+        # last resort: scan for any float-shaped token
         floats = re.findall(r'(0\.\d+|1\.0)', raw)
-        return float(floats[0]) if floats else 0.5  # 0.5 not 0.0 for ambiguous
+        return float(floats[0]) if floats else 0.5  # 0.5 (ambiguous, not a hard fail)
     except Exception as e:
         print(f"  [score_meaning error] {e}")
         return 0.0
@@ -229,23 +229,23 @@ Score how semantically equivalent Answer B is to Answer A."""
 
 ###############################################################
 # AXIS P: Provenance Score
-# from= 체인 완결성 및 root 역추적 정확도
+# from= chain completeness and root traceability accuracy
 ###############################################################
 
 @dataclass
 class ProvenanceScore:
-    """Axis P 결과."""
-    ref_validity: float      # 유효한 from= 참조 비율
-    chain_depth: int         # 최대 체인 깊이
-    root_reachable: float    # 루트까지 역추적 성공 비율
+    """Axis P result."""
+    ref_validity: float      # fraction of valid from= references
+    chain_depth: int         # maximum observed chain depth
+    root_reachable: float    # fraction of chains that reach a root
     overall: float
 
 
 def score_provenance(response: str, ground_truth_root: str | None = None) -> ProvenanceScore:
     """
-    Axis P: from= 체인 완결성 채점.
+    Axis P: score from= chain completeness.
 
-    ground_truth_root: 실제 루트 값 (알고 있는 경우)
+    ground_truth_root: expected root value (if known)
     """
     try:
         parsed = flatten(parse_wcy(response))
@@ -261,7 +261,7 @@ def score_provenance(response: str, ground_truth_root: str | None = None) -> Pro
     if total_refs == 0:
         return ProvenanceScore(1.0, 0, 1.0, 1.0)
 
-    # 유효 참조 비율
+    # reference validity ratio
     valid_refs = sum(
         1 for l in parsed
         for ref in l.from_refs
@@ -269,12 +269,12 @@ def score_provenance(response: str, ground_truth_root: str | None = None) -> Pro
     )
     ref_validity = valid_refs / total_refs
 
-    # 최대 체인 깊이 (from= 있는 마지막 줄에서 역추적)
+    # maximum chain depth (traced from the last lines with from=)
     lines_with_from = [l for l in parsed if l.from_refs]
     max_depth = 0
     root_successes = 0
 
-    for line in lines_with_from[-3:]:  # 마지막 3개만 샘플
+    for line in lines_with_from[-3:]:  # sample last 3 lines only
         chain = resolve_chain(parsed, line.line_num)
         depth = len(chain)
         max_depth = max(max_depth, depth)
@@ -282,12 +282,12 @@ def score_provenance(response: str, ground_truth_root: str | None = None) -> Pro
         if chain:
             root_line = chain[0]
             if ground_truth_root:
-                # 루트 줄의 값들에 ground_truth_root가 포함되는지
+                # check if root line text contains the expected root value
                 root_text = root_line.raw.lower()
                 if ground_truth_root.lower() in root_text:
                     root_successes += 1
             else:
-                root_successes += 1  # 루트 도달 자체를 성공으로
+                root_successes += 1  # reaching any root counts as success
 
     root_reachable = root_successes / max(len(lines_with_from[-3:]), 1)
 
@@ -302,16 +302,16 @@ def score_provenance(response: str, ground_truth_root: str | None = None) -> Pro
 
 
 ###############################################################
-# 통합 채점: WCYScore
+# ── Composite Scoring: WCYScore ─────────────────────────────────────────────
 ###############################################################
 
 @dataclass
 class WCYScore:
-    """세 축의 통합 점수."""
+    """Composite score across all three axes."""
     structural: StructuralScore
     meaning: float            # Axis M (0.0–1.0)
     provenance: ProvenanceScore
-    composite: float          # 가중 종합 점수
+    composite: float          # weighted composite score
     model: str = ""
     task: str = ""
     format: str = ""          # 'wcy' or 'json'
@@ -337,19 +337,19 @@ def score_full(
     skip_meaning: bool = False,
 ) -> WCYScore:
     """
-    세 축 통합 채점.
+    Full three-axis scoring.
 
-    skip_meaning=True: API 호출 절약 (구조/provenance만)
+    skip_meaning=True: skip API call, score structure and provenance only.
     """
     s = score_structural(response) if fmt == "wcy" else StructuralScore(1,1,1,1,1,1)
     m = score_meaning(response, reference_answer, question) if not skip_meaning else 0.0
     p = score_provenance(response, ground_truth_root) if fmt == "wcy" else ProvenanceScore(1,0,1,1)
 
-    # 포맷별 가중치
+    # per-format weighting
     if fmt == "wcy":
         composite = s.overall * 0.30 + m * 0.50 + p.overall * 0.20
     else:
-        composite = m  # JSON은 의미만 채점
+        composite = m  # JSON: meaning only
 
     return WCYScore(
         structural=s, meaning=m, provenance=p,
@@ -358,11 +358,11 @@ def score_full(
 
 
 
-# ── 아래는 직접 실행 시에만 동작 (\`import wcy_eval\`로 사용 시 건너뜀) ──
+# ── Runs only when executed directly (skipped on `import wcy_eval`) ──────────
 
 
 if __name__ == '__main__':
-    # E1-C 재실험 — Sprint 3의 Sonnet WCY 62% 문제 재검증
+    # E1-C re-run — investigating the Sonnet WCY 62% anomaly from Sprint 3
 
     print("\n" + "=" * 70)
     print("  E1-C RERUN — Parser-based + Meaning Score Evaluation")
@@ -377,11 +377,11 @@ if __name__ == '__main__':
     SLOTS: tag=value | bare_value | ?tag (void) | from=N | conf=0.xx
     One marker per line, space after marker. Max depth 2."""
 
-    # ── 테스트 케이스 (E1-C와 동일 데이터) ──────────────────────────
+    # ── Test cases (same data as E1-C) ──────────────────────────────────────
 
     TEST_CASES = [
         {
-            "name": "Read — cardiovascular risk",
+            "name": "Read -- cardiovascular risk",
             "data_json": json.dumps({
                 "patient": {"name": "Choi", "age": 55, "bp": "165/100", "bmi": 31.2,
                             "smoking": "yes", "family_htn": True},
@@ -397,7 +397,7 @@ if __name__ == '__main__':
             "ground_truth_root": "choi",
         },
         {
-            "name": "Read — patient identification",
+            "name": "Read -- patient identification",
             "data_json": json.dumps({
                 "patients": [
                     {"id": "P-001", "name": "Kim",  "age": 45, "temp": 38.5, "dx": "influenza"},
@@ -441,7 +441,7 @@ if __name__ == '__main__':
                 sys_tok = count(sys)
                 pay_in  = raw_in - sys_tok
 
-                # ── 세 축 채점 ─────────────────────────────────────
+                # ── three-axis scoring ───────────────────────────────────────
                 ws = score_full(
                     response=resp,
                     question=tc["question"],
@@ -451,11 +451,11 @@ if __name__ == '__main__':
                     skip_meaning=False,
                 )
 
-                # 레거시 키워드 점수 (비교용)
+                # legacy keyword score (for comparison)
                 kw_keys = [tc["ground_truth_root"], "hypertension", "bp", "blood pressure",
                            "smoking", "park", "viral", "39.2"]
                 kw_hits = sum(1 for k in kw_keys if k.lower() in resp.lower())
-                kw_score = min(kw_hits / 3, 1.0)  # 3개 이상이면 만점
+                kw_score = min(kw_hits / 3, 1.0)  # 3+ hits = full score
 
                 row = {
                     "model": model_name, "task": tc["name"], "fmt": fmt,
@@ -466,7 +466,7 @@ if __name__ == '__main__':
                 }
                 results.append(row)
 
-                # 출력
+                # print row
                 print(f"    [{fmt.upper():>4}] S={ws.structural.overall:.2f}  "
                       f"M={ws.meaning:.2f}  P={ws.provenance.overall:.2f}  "
                       f"→ {ws.composite:.2f}  (legacy_kw={kw_score:.2f})")
@@ -475,7 +475,7 @@ if __name__ == '__main__':
 
                 time.sleep(0.8)
 
-    # ── 비교 요약 ─────────────────────────────────────────────────
+    # ── Comparison summary ───────────────────────────────────────────────────
     print(f"\n{'='*70}")
     print(f"  SUMMARY: New Score vs Legacy Keyword Score")
     print(f"  {'Model':<8} {'Fmt':<5} {'S(struct)':>10} {'M(meaning)':>11} {'P(prov)':>8} {'Composite':>10} {'Legacy KW':>10}")
@@ -493,14 +493,14 @@ if __name__ == '__main__':
             avg_kw  = sum(r["kw_legacy"] for r in rows) / len(rows)
             print(f"  {model_name:<8} {fmt:<5} {avg_S:>10.2f} {avg_M:>11.2f} {avg_P:>8.2f} {avg_C:>10.2f} {avg_kw:>10.2f}")
 
-    print(f"\n  핵심 확인: Sonnet WCY composite vs legacy kw 차이 → E1-C 재해석 가능?")
+    print(f"\n  Key check: Sonnet WCY composite vs legacy kw -- does this reframe E1-C?")
     sonnet_wcy = [r for r in results if r["model"]=="Sonnet" and r["fmt"]=="wcy"]
     if sonnet_wcy:
         new_avg  = sum(r["composite"] for r in sonnet_wcy) / len(sonnet_wcy)
         old_avg  = sum(r["kw_legacy"]  for r in sonnet_wcy) / len(sonnet_wcy)
         print(f"  Sonnet WCY: new={new_avg:.2f}  legacy={old_avg:.2f}  diff={new_avg-old_avg:+.2f}")
 
-    print(f"\n  파서 기반 채점 상세 (WCY 조건):")
+    print(f"\n  Parser-based detail (WCY condition):")
     print(f"  {'Model':<8} {'Task':<35} {'phase_v':>8} {'from_v':>7} {'parse_r':>8}")
     for r in results:
         if r["fmt"] == "wcy":
