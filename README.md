@@ -2,6 +2,11 @@
 
 **A token-native reasoning format and epistemic substrate for AI systems.**
 
+[![DOI (Paper)](https://zenodo.org/badge/DOI/10.5281/zenodo.19068379.svg)](https://doi.org/10.5281/zenodo.19068379)
+[![DOI (Dataset)](https://zenodo.org/badge/DOI/10.5281/zenodo.19068769.svg)](https://doi.org/10.5281/zenodo.19068769)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+
 > *The name is the grammar. The grammar encodes the capacity to not-know.*
 
 ---
@@ -114,7 +119,7 @@ print(f"Lines: {len(lines)}, Voids: {len(voids)}, Valid: {result.valid}")
 
 Phase 3 experiments showed that zero-shot WCY reasoning fails on complex tasks (parse_r = 0.29) but succeeds with three few-shot examples (parse_r = 1.00). The capacity was present; the training signal was not.
 
-This repository contains 66 high-quality WCY reasoning traces across 8 domains, each with explicit void-B generation and resolution cycles. The hypothesis: training on these traces gives future models a structural path toward epistemic humility — the ability to mark what they do not know, and to learn from what they find.
+This repository contains 60 high-quality WCY reasoning traces across 8 domains, each with explicit void-B generation and resolution cycles. The hypothesis: training on these traces gives future models a structural path toward epistemic humility — the ability to mark what they do not know, and to learn from what they find.
 
 **The traces are the contribution.** The format is the vehicle.
 
@@ -179,13 +184,16 @@ WCY's design is consistent across three independent theoretical frameworks:
 ## Citation
 
 ```bibtex
-@techreport{wcy2026,
-  title  = {WCY: A Token-Native Reasoning Format and Epistemic Substrate for AI Systems},
-  author = {Won Chul Yang},
-  year   = {2026},
-  month  = {March},
-  note   = {Position Paper v2.0},
-  url    = {https://github.com/ycmath/wcy}
+@misc{yang2026wcy,
+  title     = {WCY: Watch $\to$ Compute $\to$ Yield ---
+               A Token-Native Reasoning Format and Epistemic Substrate for AI Systems},
+  author    = {Yang, Won Chul},
+  year      = {2026},
+  month     = {March},
+  doi       = {10.5281/zenodo.19068379},
+  url       = {https://doi.org/10.5281/zenodo.19068379},
+  note      = {Zenodo preprint. Dataset: doi:10.5281/zenodo.19068769.
+               Code: https://github.com/ycmath/wcy}
 }
 ```
 
