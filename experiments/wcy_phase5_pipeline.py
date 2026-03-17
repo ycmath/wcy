@@ -3,24 +3,24 @@
 wcy_phase5_pipeline.py — WCY Trace Generation Pipeline v1.0
 =============================================================
 
-Phase 5: 훈련 데이터 대규모 생성
+Phase 5: large-scale training data generation
 
-목표: 12개 seed trace → 500+ usable traces
-방법: domain × difficulty × void_depth 조합 매트릭스로 체계적 생성
+Goal: 12 seed traces -> 500+ usable traces
+Method: systematic generation over domain x difficulty x void_depth matrix
 
-품질 게이트 (3단계):
-  Gate 1 — 구조: parse_r ≥ 0.70  (파서가 읽을 수 있는가)
-  Gate 2 — 공백: void_generated ≥ 1  (경계를 표시했는가)
-  Gate 3 — 해소: resolution_rate ≥ 0.50  (탐색이 완결됐는가)
+Quality gates (3 levels):
+  Gate 1 -- Structure:   parse_r >= 0.70  (parser can read the output)
+  Gate 2 -- Void:        void_generated >= 1  (at least one boundary marked)
+  Gate 3 -- Resolution:  resolution_rate >= 0.50  (exploration completed)
 
-산출물:
-  wcy_traces_v1.jsonl  ← 전체 생성 trace
-  wcy_traces_v1_clean.jsonl  ← 3게이트 통과 trace만
-  wcy_pipeline_report.txt  ← 생성 통계
+Outputs:
+  wcy_traces_v1.jsonl        <- all generated traces
+  wcy_traces_v1_clean.jsonl  <- gate-passing traces only
+  wcy_pipeline_report.txt    <- generation statistics
 
-실행: Colab Pro, wcy_parser.py 필요
-주의: 많은 API 호출 발생 (50 tasks × ~2 calls = ~100 calls)
-      약 $0.50-1.00 예상 비용
+Execution: Colab Pro, requires wcy_parser.py
+Note: many API calls (50 tasks x ~2 calls = ~100 calls)
+      estimated cost ~$0.50-1.00
 """
 
 import subprocess, sys
@@ -36,9 +36,9 @@ try:
     from wcy_parser import parse_wcy, flatten, extract_voids
     print("✓ wcy_parser v1.1 imported")
 except ImportError:
-    print("⚠ wcy_parser.py를 같은 디렉토리에 업로드하세요")
+    print("⚠ Upload wcy_parser.py to the same directory first")
 
-# ↓↓↓ API 키 직접 입력 ↓↓↓
+# ↓↓↓ Insert your API key here ↓↓↓
 API_KEY = "sk-ant-api03-YOUR_KEY_HERE"
 # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
 
@@ -52,118 +52,119 @@ print("✓ Setup complete\n")
 
 
 ###############################################################
-# 매트릭스 정의
-# domain(8) × difficulty(3) × void_depth(2) = 48 조합
-# 각 조합에서 2개 생성 = 최대 96개 / 실행당
+# Matrix definition
+# domain(8) x difficulty(3) x void_depth(2) = 48 combinations
+# RUNS_PER_COMBO traces per combination
+# Set RUNS_PER_COMBO=10 for ~480 additional traces per run
 ###############################################################
 
 DOMAINS = {
-    "medical":       "의학적 진단 및 치료 결정",
-    "code":          "소프트웨어 디버깅 및 설계",
-    "scientific":    "과학적 가설 검증",
-    "legal":         "법적 추론 및 판단",
-    "mathematical":  "수학적 증명 및 계산",
-    "strategic":     "전략적 의사결정",
-    "philosophical": "철학적/인식론적 분석",
-    "engineering":   "시스템 설계 및 트레이드오프",
+    "medical":       "medical diagnosis and treatment decisions",
+    "code":          "software debugging and system design",
+    "scientific":    "scientific hypothesis testing",
+    "legal":         "legal reasoning and judgment",
+    "mathematical":  "mathematical proofs and computation",
+    "strategic":     "strategic decision-making",
+    "philosophical": "philosophical and epistemological analysis",
+    "engineering":   "system design and trade-offs",
 }
 
 DIFFICULTIES = {
-    "simple":  {"void_target": 2, "max_tokens": 400, "description": "단일 인과 체인, 명확한 해소"},
-    "medium":  {"void_target": 4, "max_tokens": 700, "description": "다중 가설, 부분 해소"},
-    "complex": {"void_target": 6, "max_tokens": 1200, "description": "cascade, 해소 불가 !warning 포함"},
+    "simple":  {"void_target": 2, "max_tokens": 400, "description": "single causal chain, clear resolution"},
+    "medium":  {"void_target": 4, "max_tokens": 700, "description": "multiple hypotheses, partial resolution"},
+    "complex": {"void_target": 6, "max_tokens": 1200, "description": "cascade with unresolvable !warning"},
 }
 
 VOID_DEPTHS = {
-    "single":  "각 ?tag가 독립적으로 해소됨",
-    "cascade": "?tag 해소가 새 ?tag를 낳는 체인",
+    "single":  "each ?tag resolved independently",
+    "cascade": "resolution of one ?tag generates new ?tags",
 }
 
 
 ###############################################################
-# 태스크 템플릿 생성기
-# 도메인별 태스크를 동적으로 생성
+# Task template generator
+# Dynamically generates tasks per domain
 ###############################################################
 
 TASK_SEEDS = {
     "medical": [
-        ("환자 {age}세 {sex}, {symptom} {duration}일, {lab_finding} 발견. 진단 및 치료 계획.",
-         {"age": [28,45,62,71,38,55], "sex": ["남성","여성"],
-          "symptom": ["급성 흉통","고열과 오한","호흡곤란","복통","두통"],
-          "duration": [1,2,3,7,14], "lab_finding": ["troponin 상승","WBC 18000","CRP 45","D-dimer 양성"]}),
-        ("약물 {drug_a}와 {drug_b} 동시 복용 환자. 상호작용 평가 및 대안.",
+        ("Patient aged {age} ({sex}), {symptom} for {duration} days, {lab_finding} found. Diagnosis and treatment plan.",
+         {"age": [28,45,62,71,38,55], "sex": ["male","female"],
+          "symptom": ["acute chest pain","high fever and chills","dyspnea","abdominal pain","headache"],
+          "duration": [1,2,3,7,14], "lab_finding": ["troponin elevated","WBC 18000","CRP 45","D-dimer positive"]}),
+        ("Patient co-administering {drug_a} and {drug_b}. Evaluate interaction and alternatives.",
          {"drug_a": ["warfarin","metformin","lisinopril","atorvastatin"],
           "drug_b": ["ciprofloxacin","ibuprofen","amiodarone","fluconazole"]}),
     ],
     "code": [
-        ("{service} 서비스에서 {symptom} 발생, {change} 이후 시작. 원인 분석 및 수정.",
-         {"service": ["API 서버","배치 파이프라인","ML 추론 서버","데이터베이스"],
-          "symptom": ["메모리 누수","응답 지연 급증","에러율 상승","CPU 과부하"],
-          "change": ["배포 v3.1","인프라 업그레이드","트래픽 2배 증가","라이브러리 업데이트"]}),
-        ("{algorithm}의 시간복잡도 {current}를 {target}로 최적화. 트레이드오프 분석.",
-         {"algorithm": ["그래프 탐색","문자열 매칭","정렬","캐시 설계"],
+        ("{service} service showing {symptom}, started after {change}. Diagnose cause and fix.",
+         {"service": ["API server","batch pipeline","ML inference server","database"],
+          "symptom": ["memory leak","response latency spike","error rate increase","CPU overload"],
+          "change": ["deployment v3.1","infra upgrade","2x traffic increase","library update"]}),
+        ("Optimise {algorithm} from {current} to {target}. Analyse trade-offs.",
+         {"algorithm": ["graph traversal","string matching","sorting","cache design"],
           "current": ["O(n²)","O(n³)","O(2ⁿ)"],
           "target": ["O(n log n)","O(n)","O(1) amortized"]}),
     ],
     "scientific": [
-        ("실험 {experiment}에서 예상과 다른 {observation} 관찰. 원인 가설 및 검증 방법.",
-         {"experiment": ["단백질 결정화","세포 배양","화학 반응","물리 측정"],
-          "observation": ["수율 급감","이상한 부산물 생성","반응 속도 변화","측정값 이상"]}),
-        ("{phenomenon}과 {variable} 사이 상관관계 r={r} 발견. 인과 추론 평가.",
-         {"phenomenon": ["소득 수준","운동 빈도","수면 시간","스트레스 지수"],
-          "variable": ["수명","인지 기능","심혈관 건강","면역 수치"],
+        ("Unexpected {observation} in experiment {experiment}. Hypothesise cause and propose verification.",
+         {"experiment": ["protein crystallisation","cell culture","chemical reaction","physical measurement"],
+          "observation": ["yield drop","unexpected byproduct","rate change","measurement anomaly"]}),
+        ("Correlation r={r} found between {phenomenon} and {variable}. Evaluate causal inference.",
+         {"phenomenon": ["income level","exercise frequency","sleep duration","stress index"],
+          "variable": ["longevity","cognitive function","cardiovascular health","immune markers"],
           "r": ["0.72","0.85","0.61","0.43"]}),
     ],
     "legal": [
-        ("계약 {clause} 조항 해석 분쟁. {party_a} vs {party_b} 입장 분석.",
-         {"clause": ["손해배상 한도","불가항력","지식재산 귀속","비밀유지"],
-          "party_a": ["갑(발주자)","원고","구매자"],
-          "party_b": ["을(수행자)","피고","판매자"]}),
-        ("행위 {action}의 {law} 위반 여부 판단. 요건 충족 분석.",
-         {"action": ["제3자에게 정보 공유","계약 미이행","경쟁사 직원 채용","가격 담합"],
-          "law": ["개인정보보호법","공정거래법","노동법","민법 채무불이행"]}),
+        ("Dispute over interpretation of {clause} clause. Analyse positions of {party_a} vs {party_b}.",
+         {"clause": ["liability cap","force majeure","IP ownership","confidentiality"],
+          "party_a": ["client (Party A)","plaintiff","buyer"],
+          "party_b": ["vendor (Party B)","defendant","seller"]}),
+        ("Determine whether {action} violates {law}. Analyse element satisfaction.",
+         {"action": ["sharing information with a third party","contract non-performance","hiring competitor employees","price-fixing"],
+          "law": ["Personal Data Protection Act","Fair Trade Act","Labour Law","Civil Code breach of obligation"]}),
     ],
     "mathematical": [
-        ("명제: {claim}. 증명 또는 반례 제시.",
-         {"claim": ["소수는 무한히 많다","연속 함수는 적분 가능하다",
-                    "P≠NP라면 RSA는 안전하다","모든 유리수는 실수다"]}),
-        ("{problem_type} 문제: {setup}. 단계적 풀이.",
-         {"problem_type": ["확률","최적화","통계 추정","미분방정식"],
-          "setup": ["불완전 정보 게임에서 최적 전략","제약 조건 하 비용 최소화",
-                    "표본 n=30에서 모평균 추정","SIR 모델 감염자 수 예측"]}),
+        ("Proposition: {claim}. Prove or provide a counterexample.",
+         {"claim": ["there are infinitely many primes","a continuous function is integrable",
+                    "if P≠NP then RSA is secure","every rational number is a real number"]}),
+        ("{problem_type} problem: {setup}. Step-by-step solution.",
+         {"problem_type": ["probability","optimisation","statistical estimation","differential equation"],
+          "setup": ["optimal strategy in incomplete-information game","cost minimisation under constraints",
+                    "population mean estimation from n=30 sample","infected count prediction using SIR model"]}),
     ],
     "strategic": [
-        ("{company_type}가 {market}에 진출 검토. 리스크와 기회 분석.",
-         {"company_type": ["스타트업","대기업","외국계 기업"],
-          "market": ["동남아 시장","B2B SaaS","헬스케어 AI","리테일 핀테크"]}),
-        ("{resource}가 제한된 상황에서 {goal} 달성. 우선순위 결정 프레임워크.",
-         {"resource": ["6개월 런웨이","팀 5명","예산 1억원"],
-          "goal": ["PMF 달성","시리즈A 준비","수익화","기술 특허 확보"]}),
+        ("{company_type} considering entry into {market}. Analyse risks and opportunities.",
+         {"company_type": ["startup","large corporation","foreign company"],
+          "market": ["Southeast Asian market","B2B SaaS","healthcare AI","retail fintech"]}),
+        ("Achieve {goal} with limited {resource}. Priority decision framework.",
+         {"resource": ["6-month runway","team of 5","budget of 100M KRW"],
+          "goal": ["achieve PMF","prepare Series A","monetisation","secure technology patents"]}),
     ],
     "philosophical": [
-        ("주장: \"{claim}\". 전제 검증 및 반론 분석.",
-         {"claim": ["자유의지는 존재한다","AI는 의식을 가질 수 없다",
-                    "도덕은 문화 상대적이다","지식은 정당화된 참 믿음이다"]}),
-        ("{scenario}에서 {ethical_framework} 관점의 판단과 한계.",
-         {"scenario": ["자율주행차 트롤리 문제","AI 의사결정 공정성","개인정보 vs 공공안전"],
-          "ethical_framework": ["공리주의","의무론","덕윤리학","계약론"]}),
+        ("Claim: \"{claim}\". Validate premises and analyse counterarguments.",
+         {"claim": ["free will exists","AI cannot be conscious",
+                    "morality is culturally relative","knowledge is justified true belief"]}),
+        ("Judgment and limits from a {ethical_framework} perspective on {scenario}.",
+         {"scenario": ["autonomous vehicle trolley problem","AI decision-making fairness","privacy vs public safety"],
+          "ethical_framework": ["utilitarianism","deontology","virtue ethics","contractarianism"]}),
     ],
     "engineering": [
-        ("{system_type} 시스템 설계: {requirements}. 아키텍처 결정과 트레이드오프.",
-         {"system_type": ["분산 캐시","메시지 큐","API 게이트웨이","ML 서빙"],
-          "requirements": ["읽기 1M rps","99.99% 가용성","p99 <10ms","글로벌 분산"]}),
-        ("{tech_a} vs {tech_b} 기술 선택. 평가 기준과 권고.",
+        ("Design a {system_type} system for {requirements}. Architecture decisions and trade-offs.",
+         {"system_type": ["distributed cache","message queue","API gateway","ML serving"],
+          "requirements": ["1M rps reads","99.99% availability","p99 <10ms","global distribution"]}),
+        ("{tech_a} vs {tech_b} technology selection. Evaluation criteria and recommendation.",
          {"tech_a": ["PostgreSQL","Kafka","Kubernetes","REST"],
           "tech_b": ["MongoDB","RabbitMQ","Nomad","GraphQL"]}),
     ],
 }
 
 def generate_task(domain: str, difficulty: str, void_depth: str) -> dict:
-    """도메인+난이도+void_depth 조합으로 태스크 생성."""
+    """Generate a task for the given domain x difficulty x void_depth combination."""
     templates = TASK_SEEDS.get(domain, TASK_SEEDS["medical"])
     template_text, params = random.choice(templates)
 
-    # 파라미터 채우기
+    # fill in template parameters
     filled = template_text
     for key, values in params.items():
         if f"{{{key}}}" in filled:
@@ -171,8 +172,8 @@ def generate_task(domain: str, difficulty: str, void_depth: str) -> dict:
 
     diff_cfg = DIFFICULTIES[difficulty]
     void_instruction = {
-        "single":  f"?tag를 {diff_cfg['void_target']}개 생성하고 각각 독립적으로 해소하라.",
-        "cascade": f"?tag를 {diff_cfg['void_target']}개 이상 생성하고, 해소 과정에서 새 ?tag가 발생하면 그것도 추적하라. 해소 불가능한 것은 ! warning으로 표시."
+        "single":  f"Generate {diff_cfg['void_target']} ?tags and resolve each independently.",
+        "cascade": f"Generate {diff_cfg['void_target']}+ ?tags and track any new ?tags that emerge during resolution. Mark unresolvable ones with ! warning.",
     }[void_depth]
 
     return {
@@ -186,7 +187,7 @@ def generate_task(domain: str, difficulty: str, void_depth: str) -> dict:
 
 
 ###############################################################
-# WCY 추론 품질 측정
+# WCY reasoning quality measurement
 ###############################################################
 
 def measure_quality(response: str) -> dict:
@@ -213,7 +214,7 @@ def measure_quality(response: str) -> dict:
     act_lines     = [l for l in parsed if l.phase == '>']
     warning_lines = [l for l in parsed if l.phase == '!']
 
-    # 해소율: ?tag 이름이 이후 : 줄에 등장하는지 (느슨한 매칭)
+    # resolution rate: check if ?tag name appears in later : lines (loose match)
     resolved = 0
     for tag in void_tags:
         core = tag.split('_')[0].lower()
@@ -242,11 +243,11 @@ def measure_quality(response: str) -> dict:
 
 
 ###############################################################
-# 시스템 프롬프트 (Phase 4 few-shot 포함)
+# System prompt (includes Phase 4 few-shot examples)
 ###############################################################
 
 FEW_SHOT_COMPACT = dedent("""
-예시 A (code/medium):
+Example A (code/medium):
 ~ task  memory_leak  domain=software_engineering
 . service=web_api  symptom=50MB_per_hour  started_after=v2.3_release
 : ?leak_source  hint=v2.3_changes,async_tasks  conf_range=0.6..0.9
@@ -260,7 +261,7 @@ FEW_SHOT_COMPACT = dedent("""
 > implement  done_callback  from=10
 ! note  monitor_deployment_async_changes_risky  from=5,9
 
-예시 B (philosophical/complex cascade):
+Example B (philosophical/complex cascade):
 ~ task  claim_verification  domain=epistemology
 . claim  "correlation implies causation"
 . data  r=0.87  p<0.001
@@ -277,40 +278,40 @@ FEW_SHOT_COMPACT = dedent("""
 ! warning  classic_confounding_fallacy  from=10
 """).strip()
 
-SYS_PIPELINE = f"""WCY 추론 형식:
-. observe  — 확인된 사실
-: infer    — 추론 (conf= 권장, from= 로 근거 명시)
-> act      — 탐색 행동 (reason=from=N)
-~ meta     — 태스크 선언
-! exception — 경고 또는 해소불가 표시
+SYS_PIPELINE = f"""WCY reasoning format:
+. observe  -- confirmed fact
+: infer    -- derived conclusion (conf= recommended, from= for provenance)
+> act      -- investigation action (reason=from=N)
+~ meta     -- task declaration
+! exception -- warning or unresolvable marker
 
-?tag 규칙:
-  : ?unknown  hint=탐색방향  conf_range=L..H  ← 모름 표시
-  > investigate  reason=from=?_line           ← 탐색
-  . new_finding  result=value                  ← 관찰
-  : resolved=value  conf=0.xx  from=?,obs      ← 해소
+?tag rules:
+  : ?unknown  hint=direction      conf_range=L..H  <- mark unknown
+  > investigate  reason=from=?_line               <- investigate
+  . new_finding  result=value                      <- observe
+  : resolved=value  conf=0.xx  from=?,obs          <- resolved
 
 {FEW_SHOT_COMPACT}
 
-규칙: ?tag 생성하면 반드시 해소 사이클 완성. 해소 불가면 ! warning.
-마크다운, 자연어 설명 금지. WCY만 출력."""
+rule: if you generate a ?tag, complete the resolution cycle. unresolvable -> ! warning.
+no markdown, no natural language. WCY output only."""
 
 
 ###############################################################
-# 파이프라인 실행
+# Pipeline execution
 ###############################################################
 
-# 실행 계획 (조절 가능)
-# 전체: 48 조합 × 1 = 48 태스크 (빠른 실행)
-# 대규모: 48 × 2 = 96 태스크
-RUNS_PER_COMBO = 1   # 빠른 실행. 2로 바꾸면 더 많은 trace
+# Execution plan (adjustable)
+# Default: 48 combos x 1 = 48 tasks (fast)
+# Large-scale: set RUNS_PER_COMBO=10 for ~480 additional traces per run
+RUNS_PER_COMBO = 1   # fast run; set to 10 for ~480 additional traces
 
-# 도메인 순서 (다양성 우선)
+# domain order (diversity first)
 DOMAIN_ORDER  = list(DOMAINS.keys())
 DIFF_ORDER    = ["simple", "medium", "complex"]
 DEPTH_ORDER   = ["single", "cascade"]
 
-# 생성할 조합 목록
+# build combination list
 combos = [
     (d, diff, depth)
     for d in DOMAIN_ORDER
@@ -318,10 +319,10 @@ combos = [
     for depth in DEPTH_ORDER
 ]
 random.seed(42)
-random.shuffle(combos)  # 다양성을 위해 섞기
+random.shuffle(combos)  # shuffle for variety
 
-print(f"계획: {len(combos)} 조합 × {RUNS_PER_COMBO} = {len(combos)*RUNS_PER_COMBO} tasks")
-print(f"예상 시간: ~{len(combos)*RUNS_PER_COMBO*3//60}분\n")
+print(f"Plan: {len(combos)} combos x {RUNS_PER_COMBO} = {len(combos)*RUNS_PER_COMBO} tasks")
+print(f"Estimated time: ~{len(combos)*RUNS_PER_COMBO*3//60} min\n")
 
 all_traces = []
 stats = {"total": 0, "usable": 0, "gate1_fail": 0, "gate2_fail": 0, "gate3_fail": 0}
@@ -329,7 +330,7 @@ stats = {"total": 0, "usable": 0, "gate1_fail": 0, "gate2_fail": 0, "gate3_fail"
 OUTPUT_FILE = "wcy_traces_v1.jsonl"
 CLEAN_FILE  = "wcy_traces_v1_clean.jsonl"
 
-# 파일 초기화
+# initialise output files
 open(OUTPUT_FILE, 'w').close()
 open(CLEAN_FILE, 'w').close()
 
@@ -342,7 +343,7 @@ for run_i in range(RUNS_PER_COMBO):
         trace_id = f"v1_{ci:03d}_{run_i}"
         stats["total"] += 1
 
-        user_msg = f"태스크: {task['task_text']}\n\n{task['void_instruction']}"
+        user_msg = f"Task: {task['task_text']}\n\n{task['void_instruction']}"
 
         try:
             msg = client.messages.create(
@@ -359,7 +360,7 @@ for run_i in range(RUNS_PER_COMBO):
 
         q = measure_quality(resp)
 
-        # 품질 게이트
+        # quality gates
         gate1 = q["parse_rate"] >= 0.70
         gate2 = q["void_generated"] >= 1
         gate3 = q["resolution_rate"] >= 0.50
@@ -388,7 +389,7 @@ for run_i in range(RUNS_PER_COMBO):
             "usable": gate1 and gate2 and gate3,
         }
 
-        # 실시간 저장
+        # save in real time
         with open(OUTPUT_FILE, 'a', encoding='utf-8') as f:
             f.write(json.dumps(trace, ensure_ascii=False) + '\n')
         if trace["usable"]:
@@ -401,17 +402,17 @@ for run_i in range(RUNS_PER_COMBO):
 
         time.sleep(1.2)  # rate limit
 
-# ── 최종 보고서 ────────────────────────────────────────────────
+# ── Final report ────────────────────────────────────────────────
 print(f"\n{'═'*62}")
 print(f"  PIPELINE COMPLETE")
 print(f"{'═'*62}")
-print(f"  총 생성: {stats['total']}")
-print(f"  Usable:  {stats['usable']} ({stats['usable']/max(stats['total'],1)*100:.0f}%)")
-print(f"  Gate 1 실패 (parse_r): {stats['gate1_fail']}")
-print(f"  Gate 2 실패 (void≥1):  {stats['gate2_fail']}")
-print(f"  Gate 3 실패 (res≥50%): {stats['gate3_fail']}")
+print(f"  Total:     {stats['total']}")
+print(f"  Usable:    {stats['usable']} ({stats['usable']/max(stats['total'],1)*100:.0f}%)")
+print(f"  Gate 1 fail (parse_r): {stats['gate1_fail']}")
+print(f"  Gate 2 fail (void>=1): {stats['gate2_fail']}")
+print(f"  Gate 3 fail (res>=50%): {stats['gate3_fail']}")
 
-# 도메인별 통계
+# per-domain statistics
 from collections import defaultdict
 domain_stats = defaultdict(lambda: {"total":0,"usable":0,"avg_void":0,"avg_res":0})
 with open(OUTPUT_FILE) as f:
@@ -423,7 +424,7 @@ with open(OUTPUT_FILE) as f:
         domain_stats[d]["avg_void"] += t["quality"]["void_generated"]
         domain_stats[d]["avg_res"]  += t["quality"]["resolution_rate"]
 
-print(f"\n  도메인별:")
+print(f"\n  By domain:")
 print(f"  {'Domain':<14} {'total':>6} {'usable':>7} {'?avg':>6} {'res%':>6}")
 print(f"  {'─'*44}")
 for dom, s in sorted(domain_stats.items()):
@@ -431,7 +432,7 @@ for dom, s in sorted(domain_stats.items()):
     print(f"  {dom:<14} {s['total']:>6} {s['usable']:>7} "
           f"{s['avg_void']/n:>6.1f} {s['avg_res']/n*100:>5.0f}%")
 
-# 보고서 저장
+# save report
 report = {
     "stats": stats,
     "domain_stats": dict(domain_stats),
@@ -441,8 +442,8 @@ report = {
 with open("wcy_pipeline_report.json", "w") as f:
     json.dump(report, f, ensure_ascii=False, indent=2)
 
-print(f"\n  저장:")
-print(f"  {OUTPUT_FILE}    — 전체 trace")
-print(f"  {CLEAN_FILE} — usable trace만")
-print(f"  wcy_pipeline_report.json — 통계")
-print(f"\n  다음: Colab 파일 패널에서 세 파일 다운로드")
+print(f"\n  Saved:")
+print(f"  {OUTPUT_FILE}    -- all traces")
+print(f"  {CLEAN_FILE} -- usable traces only")
+print(f"  wcy_pipeline_report.json -- statistics")
+print(f"\n  Download the three files from the Colab file panel")
