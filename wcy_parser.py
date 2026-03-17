@@ -2,10 +2,10 @@
 """
 wcy_parser.py — WCY Reference Parser v1.1
     Changelog:
-      v1.1: | separator support
+      v1.1:   | separator support
       v1.1.1: fix validate() dead code, fix reconstruct() block gap
 ==========================================
-WCY (Watch → Compute → Yield) 포맷의 레퍼런스 구현.
+Reference implementation of the WCY (Watch → Compute → Yield) format.
 
 Usage:
     from wcy_parser import parse_wcy, resolve_chain, extract_voids, WCYLine
@@ -21,7 +21,7 @@ from typing import Any
 import re
 
 
-# ── 상수 ──────────────────────────────────────────────────────────────────
+# ── Constants ───────────────────────────────────────────────────────────────
 
 PHASE_MARKERS = {
     '.': 'observe',
@@ -31,56 +31,56 @@ PHASE_MARKERS = {
     '!': 'exception',
 }
 
-MAX_DEPTH = 2  # WCY spec: 최대 중첩 깊이
+MAX_DEPTH = 2  # WCY spec: maximum nesting depth
 
 
-# ── 데이터 클래스 ─────────────────────────────────────────────────────────
+# ── Data Classes ────────────────────────────────────────────────────────────
 
 @dataclass
 class WCYSlot:
-    """단일 슬롯. tag=value 또는 positional bare_value."""
-    key: str | None       # tag 이름 (없으면 None = positional)
-    value: str            # 값
-    is_void: bool = False # ?tag 마커 여부
-    position: int = 0     # positional 슬롯의 순서 (0-indexed)
+    """A single slot: tag=value pair or a positional bare value."""
+    key: str | None       # tag name (None = positional slot)
+    value: str            # slot value
+    is_void: bool = False # True if this is a void-B ?tag marker
+    position: int = 0     # order among positional slots (0-indexed)
 
 
 @dataclass
 class WCYLine:
-    """파싱된 WCY 줄 하나 (= 하나의 δ-expression)."""
-    line_num: int                      # 1-indexed, 비어있지 않은 줄 기준
-    raw: str                           # 원본 텍스트
+    """A single parsed WCY line (one δ-expression)."""
+    line_num: int                      # 1-indexed among non-blank lines
+    raw: str                           # original source text
     phase: str                         # '.', ':', '>', '~', '!'
     phase_name: str                    # 'observe', 'infer', 'act', 'meta', 'exception'
-    depth: int                         # 들여쓰기 깊이 (0, 1, 2)
+    depth: int                         # indent depth (0, 1, or 2)
     slots: list[WCYSlot] = field(default_factory=list)
-    tags: dict[str, str] = field(default_factory=dict)    # tag → value
-    void_tags: list[str] = field(default_factory=list)    # ?tag 이름 목록
-    from_refs: list[int] = field(default_factory=list)    # from=N,M → [N, M]
+    tags: dict[str, str] = field(default_factory=dict)    # tag → value mapping
+    void_tags: list[str] = field(default_factory=list)    # list of void-B tag names
+    from_refs: list[int] = field(default_factory=list)    # from=N,M parsed as [N, M]
     conf: float | None = None                             # conf=0.xx
     conf_range: tuple[float, float] | None = None         # conf_range=0.4..0.8
-    block_index: int = 0                                  # 빈 줄로 구분된 블록 번호
-    children: list[WCYLine] = field(default_factory=list) # 들여쓰기 자식
+    block_index: int = 0                                  # block number (increments on blank line)
+    children: list[WCYLine] = field(default_factory=list) # indented child lines
 
     @property
     def is_void(self) -> bool:
-        """이 줄에 void-B 마커가 있는가."""
+        """True if this line contains at least one void-B marker."""
         return len(self.void_tags) > 0
 
     @property
     def positional_values(self) -> list[str]:
-        """tag 없는 positional 슬롯 값들."""
+        """Values of positional (unkeyed) slots."""
         return [s.value for s in self.slots if s.key is None and not s.is_void]
 
     @property
     def first_value(self) -> str | None:
-        """첫 번째 슬롯 값 (positional이든 tagged이든)."""
+        """First slot value, regardless of type."""
         if self.slots:
             return self.slots[0].value
         return None
 
     def to_dict(self) -> dict[str, Any]:
-        """직렬화."""
+        """Serialize to a JSON-compatible dict."""
         return {
             'line_num':    self.line_num,
             'phase':       self.phase,
@@ -108,7 +108,7 @@ class WCYLine:
         return "".join(parts)
 
 
-# ── 슬롯 파서 ─────────────────────────────────────────────────────────────
+# ── Slot Parser ─────────────────────────────────────────────────────────────
 
 _QUOTED_RE  = re.compile(r'^"([^"]*)"$')
 _TAGVAL_RE  = re.compile(r'^(\w[\w\-\.]*)\s*=\s*(.+)$')
@@ -119,8 +119,8 @@ _CONF_RE    = re.compile(r'^([\d.]+)\.\.([\d.]+)$')
 
 def _parse_slot(token: str, pos_index: int) -> WCYSlot | None:
     """
-    토큰 하나를 WCYSlot으로 파싱.
-    특수 슬롯(from=, conf=, conf_range=)은 None 반환 (호출자가 별도 처리).
+    Parse a single token into a WCYSlot.
+    Special slots (from=, conf=, conf_range=) return None; caller handles them.
     """
     token = token.strip()
     if not token:
@@ -135,18 +135,18 @@ def _parse_slot(token: str, pos_index: int) -> WCYSlot | None:
     m = _TAGVAL_RE.match(token)
     if m:
         key, val = m.group(1), m.group(2).strip()
-        # 따옴표 제거
+        # strip surrounding quotes
         qm = _QUOTED_RE.match(val)
         if qm:
             val = qm.group(1)
         return WCYSlot(key=key, value=val, position=pos_index)
 
-    # {N} 역참조
+    # {N} back-reference
     m = _BACKREF_RE.match(token)
     if m:
         return WCYSlot(key='__backref__', value=m.group(1), position=pos_index)
 
-    # bare positional value (따옴표 포함 가능)
+    # bare positional value (may be quoted)
     qm = _QUOTED_RE.match(token)
     val = qm.group(1) if qm else token
     return WCYSlot(key=None, value=val, position=pos_index)
@@ -158,12 +158,12 @@ def _parse_slots(rest: str) -> tuple[
     float | None, tuple[float, float] | None
 ]:
     """
-    phase marker 이후의 나머지 문자열을 파싱.
-    반환: (slots, tags, void_tags, from_refs, conf, conf_range)
+    Parse the remainder of a line after the phase marker.
+    Returns: (slots, tags, void_tags, from_refs, conf, conf_range)
     """
-    # 공백/| 구분 토큰화 (따옴표 내부 보호)
+    # Tokenize on whitespace / pipe, protecting quoted strings.
     # | = optional slot separator (spec v1.1)
-    # 모델이 복잡한 슬롯에서 자발적으로 사용하는 패턴을 공식화
+    # Formalizes a pattern models use spontaneously on dense slot lines.
     # "a | b=c | d"  →  ["a", "b=c", "d"]
     tokens: list[str] = []
     current = []
@@ -195,7 +195,7 @@ def _parse_slots(rest: str) -> tuple[
         if not token:
             continue
 
-        # ── 특수 태그 우선 처리 ────────────────────────────────────────
+        # ── Handle special tags first ────────────────────────────────────────
         # from=N,M
         if token.startswith('from='):
             raw = token[5:]
@@ -221,7 +221,7 @@ def _parse_slots(rest: str) -> tuple[
                 pass
             continue
 
-        # ?tag (void-B) — 줄 첫 실질 슬롯으로 오는 경우
+        # ?tag (void-B) — may appear as the first real slot on a : line
         m = _VOID_RE.match(token)
         if m:
             tag_name = m.group(1)
@@ -230,7 +230,7 @@ def _parse_slots(rest: str) -> tuple[
             pos_index += 1
             continue
 
-        # 일반 슬롯
+        # Regular slot
         slot = _parse_slot(token, pos_index)
         if slot:
             slots.append(slot)
@@ -241,18 +241,18 @@ def _parse_slots(rest: str) -> tuple[
     return slots, tags, void_tags, from_refs, conf, conf_range
 
 
-# ── 줄 파서 ───────────────────────────────────────────────────────────────
+# ── Line Parser ─────────────────────────────────────────────────────────────
 
 def _measure_depth(raw_line: str) -> int:
-    """들여쓰기 깊이 측정 (2칸 = 1 depth)."""
+    """Measure indent depth (2 spaces = 1 level)."""
     spaces = len(raw_line) - len(raw_line.lstrip(' '))
     return min(spaces // 2, MAX_DEPTH)
 
 
 def _parse_line(raw: str, line_num: int, block_index: int) -> WCYLine | None:
     """
-    단일 줄을 WCYLine으로 파싱.
-    빈 줄이거나 주석(# 시작)이면 None 반환.
+    Parse a single raw line into a WCYLine.
+    Returns None for blank lines and comment lines (starting with #).
     """
     stripped = raw.strip()
     if not stripped or stripped.startswith('#'):
@@ -260,13 +260,13 @@ def _parse_line(raw: str, line_num: int, block_index: int) -> WCYLine | None:
 
     depth = _measure_depth(raw)
 
-    # phase marker 확인 (첫 비공백 문자)
+    # validate phase marker (first non-whitespace character)
     if len(stripped) < 2:
         return None
     phase = stripped[0]
     if phase not in PHASE_MARKERS:
         return None
-    if stripped[1] != ' ':  # phase marker 다음 반드시 공백
+    if stripped[1] != ' ':  # phase marker must be followed by a space
         return None
 
     rest = stripped[2:].strip()
@@ -288,22 +288,22 @@ def _parse_line(raw: str, line_num: int, block_index: int) -> WCYLine | None:
     )
 
 
-# ── 메인 파서 ─────────────────────────────────────────────────────────────
+# ── Main Parser ─────────────────────────────────────────────────────────────
 
 def parse_wcy(text: str) -> list[WCYLine]:
     """
-    WCY 텍스트를 파싱하여 WCYLine 목록 반환.
+    Parse WCY text into a list of WCYLine objects.
 
-    - line_num은 비어있지 않은 유효 줄 기준 1-indexed
-    - 빈 줄은 block_index를 증가시킴
-    - 들여쓰기 깊이 2 이하의 자식 관계를 children에 연결
+    - line_num is 1-indexed over non-blank valid lines
+    - blank lines increment block_index
+    - lines indented up to depth 2 are linked via children
 
     Args:
-        text: WCY 형식의 텍스트
+        text: WCY-formatted string
 
     Returns:
-        최상위 WCYLine 목록 (depth=0인 줄들).
-        children 필드로 하위 줄 접근 가능.
+        List of top-level WCYLine objects (depth=0).
+        Deeper lines are accessible via the children field.
     """
     raw_lines = text.split('\n')
     parsed: list[WCYLine] = []
@@ -323,17 +323,17 @@ def parse_wcy(text: str) -> list[WCYLine]:
         if wcy_line:
             parsed.append(wcy_line)
 
-    # ── 들여쓰기 부모-자식 연결 ────────────────────────────────────────
+    # ── Build parent-child tree from indentation ────────────────────────────────
     result: list[WCYLine] = []
-    stack: list[WCYLine] = []  # (depth, line) 스택
+    stack: list[WCYLine] = []  # (depth, line) stack for parent tracking
 
     for line in parsed:
-        # 현재 depth보다 깊거나 같은 것 스택에서 제거
+        # pop entries at same or deeper depth
         while stack and stack[-1].depth >= line.depth:
             stack.pop()
 
         if stack:
-            # 부모의 children에 추가
+            # attach to parent's children list
             stack[-1].children.append(line)
         else:
             result.append(line)
@@ -344,7 +344,7 @@ def parse_wcy(text: str) -> list[WCYLine]:
 
 
 def flatten(lines: list[WCYLine]) -> list[WCYLine]:
-    """children 포함하여 모든 줄을 line_num 순서로 평탄화."""
+    """Flatten all lines (including children) in line_num order."""
     result: list[WCYLine] = []
 
     def _collect(line: WCYLine):
@@ -358,7 +358,7 @@ def flatten(lines: list[WCYLine]) -> list[WCYLine]:
     return sorted(result, key=lambda l: l.line_num)
 
 
-# ── 체인 분석 유틸리티 ─────────────────────────────────────────────────────
+# ── Chain Analysis Utilities ────────────────────────────────────────────────
 
 def resolve_chain(
     lines: list[WCYLine],
@@ -366,15 +366,15 @@ def resolve_chain(
     max_depth: int = 20,
 ) -> list[WCYLine]:
     """
-    from= 체인을 역추적하여 루트까지의 경로를 반환.
+    Walk the from= provenance chain back to the root.
 
     Args:
-        lines: parse_wcy() 결과 (flatten 후 사용)
-        target_line: 역추적 시작 줄 번호 (1-indexed)
-        max_depth: 최대 역추적 깊이 (순환 방지)
+        lines: result of parse_wcy() (use after flatten)
+        target_line: starting line number to trace back from (1-indexed)
+        max_depth: maximum chain depth to follow (prevents cycles)
 
     Returns:
-        [루트 줄, ..., 중간 줄들, ..., target 줄] 순서
+        Lines sorted by line_num from root to target.
     """
     flat = flatten(lines) if any(l.children for l in lines) else lines
     by_num = {l.line_num: l for l in flat}
@@ -395,14 +395,14 @@ def resolve_chain(
 
     _trace(target_line, 0)
 
-    # 루트가 앞에 오도록 line_num 기준 정렬
+    # sort ascending so root appears first
     chain.sort(key=lambda l: l.line_num)
     return chain
 
 
 def find_root(lines: list[WCYLine], target_line: int) -> WCYLine | None:
     """
-    from= 체인의 최종 루트(from= 없는 최상위 근거)를 반환.
+    Return the root line of the from= chain (first line with no from= refs).
     """
     chain = resolve_chain(lines, target_line)
     for line in chain:
@@ -411,14 +411,14 @@ def find_root(lines: list[WCYLine], target_line: int) -> WCYLine | None:
     return chain[0] if chain else None
 
 
-# ── void-B 유틸리티 ───────────────────────────────────────────────────────
+# ── Void-B Utilities ────────────────────────────────────────────────────────
 
 def extract_voids(lines: list[WCYLine]) -> list[WCYLine]:
     """
-    ?tag 마커가 있는 모든 줄을 반환.
+    Return all lines containing at least one void-B (?tag) marker.
 
     Returns:
-        void-B 마커를 포함한 WCYLine 목록
+        List of WCYLine objects that have void_tags.
     """
     flat = flatten(lines) if any(l.children for l in lines) else lines
     return [l for l in flat if l.is_void]
@@ -426,7 +426,7 @@ def extract_voids(lines: list[WCYLine]) -> list[WCYLine]:
 
 def void_summary(lines: list[WCYLine]) -> dict[str, Any]:
     """
-    void-B 현황 요약.
+    Summarize void-B state for a parsed document.
 
     Returns:
         {
@@ -448,44 +448,44 @@ def void_summary(lines: list[WCYLine]) -> dict[str, Any]:
     return {'total': len(summary), 'voids': summary}
 
 
-# ── 블록/문맥 유틸리티 ────────────────────────────────────────────────────
+# ── Block / Context Utilities ───────────────────────────────────────────────
 
 def get_block(lines: list[WCYLine], block_index: int) -> list[WCYLine]:
-    """특정 블록 번호의 줄만 반환 (빈 줄로 구분된 단위)."""
+    """Return only lines belonging to the given block_index."""
     flat = flatten(lines) if any(l.children for l in lines) else lines
     return [l for l in flat if l.block_index == block_index]
 
 
 def get_phase(lines: list[WCYLine], phase: str) -> list[WCYLine]:
-    """특정 phase marker의 줄만 반환."""
+    """Return only lines with the given phase marker."""
     flat = flatten(lines) if any(l.children for l in lines) else lines
     return [l for l in flat if l.phase == phase]
 
 
 def get_by_tag(lines: list[WCYLine], tag: str) -> list[WCYLine]:
-    """특정 태그 키가 있는 줄 반환."""
+    """Return lines that contain the given tag key."""
     flat = flatten(lines) if any(l.children for l in lines) else lines
     return [l for l in flat if tag in l.tags]
 
 
-# ── 직렬화 ────────────────────────────────────────────────────────────────
+# ── Serialization ───────────────────────────────────────────────────────────
 
 def to_dict_list(lines: list[WCYLine]) -> list[dict]:
-    """parse_wcy 결과를 JSON 직렬화 가능한 dict 목록으로 변환."""
+    """Convert parse_wcy results to a JSON-serialisable list of dicts."""
     flat = flatten(lines) if any(l.children for l in lines) else lines
     return [l.to_dict() for l in flat]
 
 
 def reconstruct(lines: list[WCYLine]) -> str:
     """
-    WCYLine 목록을 WCY 텍스트로 재구성.
-    (라운드트립 검증용)
+    Reconstruct WCY text from a list of WCYLine objects.
+    Useful for round-trip validation.
     """
     flat = flatten(lines) if any(l.children for l in lines) else lines
     result = []
     prev_block = 0
     for line in flat:
-        # 블록 경계마다 빈 줄 삽입 (블록 차이만큼)
+        # insert one blank line per block boundary crossed
         while prev_block < line.block_index:
             result.append('')
             prev_block += 1
@@ -493,7 +493,7 @@ def reconstruct(lines: list[WCYLine]) -> str:
     return '\n'.join(result)
 
 
-# ── 검증 ──────────────────────────────────────────────────────────────────
+# ── Validation ──────────────────────────────────────────────────────────────
 
 @dataclass
 class ValidationResult:
@@ -505,14 +505,14 @@ class ValidationResult:
 
 def validate(lines: list[WCYLine]) -> ValidationResult:
     """
-    파싱된 WCY 문서의 구조적 유효성 검사.
+    Validate the structural correctness of a parsed WCY document.
 
-    검사 항목:
-    - from= 참조가 유효한 줄 번호를 가리키는가
-    - from= 전방 참조 금지 (from=N에서 N < 현재 줄)
-    - 들여쓰기 깊이 ≤ 2
-    - conf 값이 0.0~1.0 범위
-    - conf_range에서 low ≤ high
+    Checks:
+    - from= references point to existing line numbers
+    - from= forward references are forbidden (N < current line)
+    - indent depth ≤ 2
+    - conf values in [0.0, 1.0]
+    - conf_range satisfies low ≤ high
     """
     flat = flatten(lines) if any(l.children for l in lines) else lines
     all_nums = {l.line_num for l in flat}
@@ -521,7 +521,7 @@ def validate(lines: list[WCYLine]) -> ValidationResult:
     warnings: list[str] = []
 
     for line in flat:
-        # from= 유효성
+        # validate from= references
         for ref in line.from_refs:
             if ref not in all_nums:
                 errors.append(
@@ -532,19 +532,19 @@ def validate(lines: list[WCYLine]) -> ValidationResult:
                     f"Line {line.line_num}: from={ref} is a forward reference (forbidden)"
                 )
 
-        # 들여쓰기
+        # indent depth
         if line.depth > MAX_DEPTH:
             errors.append(
                 f"Line {line.line_num}: depth={line.depth} exceeds max ({MAX_DEPTH})"
             )
 
-        # conf 범위
+        # conf range
         if line.conf is not None and not (0.0 <= line.conf <= 1.0):
             errors.append(
                 f"Line {line.line_num}: conf={line.conf} out of range [0, 1]"
             )
 
-        # conf_range 논리
+        # conf_range logic
         if line.conf_range:
             lo, hi = line.conf_range
             if lo > hi:
@@ -552,7 +552,7 @@ def validate(lines: list[WCYLine]) -> ValidationResult:
                     f"Line {line.line_num}: conf_range={lo}..{hi} invalid (low > high)"
                 )
 
-        # void-B에 hint= 권장
+        # recommend hint= on void-B lines
         if line.is_void and 'hint' not in line.tags:
             warnings.append(
                 f"Line {line.line_num}: void-B ?{line.void_tags} without hint="
@@ -575,7 +575,7 @@ def validate(lines: list[WCYLine]) -> ValidationResult:
     )
 
 
-# ── CLI / 빠른 테스트 ──────────────────────────────────────────────────────
+# ── CLI / Quick Test ────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     SAMPLE = """
