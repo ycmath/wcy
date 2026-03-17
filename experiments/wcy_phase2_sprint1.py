@@ -332,7 +332,7 @@ for n_calls in [1, 5, 10, 20, 50]:
 
 
 ###############################################################
-# CELL 5: E2-A — 3-Agent Delegation Chain (API 필요)
+# CELL 5: E2-A -- 3-Agent Delegation Chain (API required)
 ###############################################################
 
 TASK = """Analyze patient P-1001 (Kim, age 42, temp 38.5, symptoms: fever + cough + fatigue for 7 days).
@@ -344,7 +344,7 @@ WCY format: lines starting with . (data), : (inference), > (action), ~ (meta), !
 Slots are space-separated. tag=value for named, bare for positional. from=N for evidence trail."""
 
 if not USE_API:
-    print("\n⏭ E2-A 건너뜀 (API 필요)")
+    print("\n⏭ E2-A skipped (API required)")
 else:
     print("\n" + "=" * 70)
     print("  E2-A: 3-AGENT DELEGATION CHAIN")
@@ -447,7 +447,7 @@ else:
 
 
 ###############################################################
-# CELL 6: E2-A Comprehension Check (API 필요)
+# CELL 6: E2-A Comprehension Check (API required)
 ###############################################################
 
 if USE_API:
