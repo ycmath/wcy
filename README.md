@@ -66,7 +66,7 @@ Nine experiments across four research phases:
 | Void-B generation (0-shot) | 0% |
 | Void-B generation (with examples) | 5.4 markers/trace |
 | Void-B resolution rate | 67–97% |
-| Pipeline quality gate pass rate (48 traces) | 48/48 (100%) |
+| Pipeline quality gate pass rate (528 traces) | 528/528 (100%) |
 
 ---
 
@@ -119,7 +119,7 @@ print(f"Lines: {len(lines)}, Voids: {len(voids)}, Valid: {result.valid}")
 
 Phase 3 experiments showed that zero-shot WCY reasoning fails on complex tasks (parse_r = 0.29) but succeeds with three few-shot examples (parse_r = 1.00). The capacity was present; the training signal was not.
 
-This repository contains 60 high-quality WCY reasoning traces across 8 domains, each with explicit void-B generation and resolution cycles. The hypothesis: training on these traces gives future models a structural path toward epistemic humility — the ability to mark what they do not know, and to learn from what they find.
+This repository contains 540 high-quality WCY reasoning traces across 8 domains, each with explicit void-B generation and resolution cycles. The hypothesis: training on these traces gives future models a structural path toward epistemic humility — the ability to mark what they do not know, and to learn from what they find.
 
 **The traces are the contribution.** The format is the vehicle.
 
