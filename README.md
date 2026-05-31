@@ -75,6 +75,8 @@ Nine experiments across four research phases:
 ```
 wcy_parser.py                   Reference parser (v1.1, | separator support)
 wcy_eval.py                     3-axis evaluation: Structural / Meaning / Provenance
+wcy_bilattice.py                Carrier bilattice coordinates (Belnap ⊥/T/F/⊤; UNKNOWN vs CONFLICT)
+test_wcy_bilattice.py           Tests for wcy_bilattice (python test_wcy_bilattice.py)
 data/
   wcy_reasoning_traces.jsonl    Reasoning traces (6 domains)
   wcy_void_cycles.jsonl         Void-B resolution cycle traces (6 traces)
