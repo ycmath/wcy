@@ -106,8 +106,8 @@ lean/wcymerge/                  Kernel-checked merge laws: 10 theorems,
 tests/                          v1-compat + v2 semantics test suite
 data/                           v1 trace corpus (540 traces)
 experiments/                    v1 experiment scripts
-papers/                         papers (v2 revision of the position
-                                paper: in preparation)
+papers/                         papers; second_edition/ = the v2 paper
+                                (Zenodo: 10.5281/zenodo.19068378, latest)
 ```
 
 ## Conformance
