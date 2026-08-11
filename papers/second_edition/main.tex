@@ -1,0 +1,912 @@
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ─────────────────────────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{abstract}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{tcolorbox}
+\usepackage{mdframed}
+\usepackage{url}
+\usepackage{natbib}
+
+% arXiv: load hyperref last, no driver option
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=black
+}
+
+% v2: allow URLs to break at hyphens, and give TeX a little slack on
+% paragraphs containing long unbreakable DOI strings.
+\expandafter\def\expandafter\UrlBreaks\expandafter{\UrlBreaks\do\-}
+\emergencystretch=3em
+
+\geometry{
+  a4paper,
+  top=25mm, bottom=25mm,
+  left=25mm, right=25mm
+}
+
+% ── Code listing style ────────────────────────────────────────────────────────
+\lstdefinestyle{wcystyle}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{gray!8},
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{gray!40},
+  xleftmargin=10pt,
+  xrightmargin=10pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  keepspaces=true,
+  columns=flexible,
+  showstringspaces=false
+}
+\lstset{style=wcystyle}
+
+% ── Claim box ─────────────────────────────────────────────────────────────────
+\newmdenv[
+  linewidth=1.5pt,
+  linecolor=black!60,
+  backgroundcolor=gray!5,
+  innerleftmargin=12pt,
+  innerrightmargin=12pt,
+  innertopmargin=8pt,
+  innerbottommargin=8pt,
+  skipabove=8pt,
+  skipbelow=8pt
+]{claimbox}
+
+% ── Title ─────────────────────────────────────────────────────────────────────
+\title{%
+  \textbf{WCY: Watch $\to$ Compute $\to$ Yield}\\[4pt]
+  \large A Token-Native Reasoning Format and Epistemic Substrate\\
+  for AI Systems, with Theorem-Backed Semantics%
+  \thanks{Second edition (v2). The March 2026 first edition is superseded;
+  the surface format is unchanged and all first-edition empirical results
+  carry over. Change summary in Appendix~\ref{app:changelog}.}
+}
+
+\author{%
+  Won Chul Yang\\[2pt]
+  \small \texttt{wcy0969@gmail.com}
+}
+
+\date{August 2026}
+
+% ── Document ──────────────────────────────────────────────────────────────────
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+Current large language models can represent what they know. They cannot represent the \emph{boundary} of what they know---not structurally, not in a way that generates directed exploration from that boundary. We present \textbf{WCY} (Watch~$\to$~Compute~$\to$~Yield), a line-oriented, phase-tagged format designed from first principles for AI reasoning. WCY's critical element is the \emph{void-B marker} (\texttt{?}), which encodes Peirce's abductive stance as a first-class syntactic primitive: the explicit representation of an unknown state, the direction of most plausible exploration (\texttt{hint=}), and the expected range of the result (\texttt{conf\_range=}).
+
+Empirical validation across four research phases demonstrates: (1)~WCY achieves 50--71\% token reduction over JSON for structured data and protocol messages; (2)~WCY reasoning is acquired entirely through few-shot induction with zero fine-tuning---complex tasks that produced \texttt{parse\_r}~$= 0.29$ without examples reached \texttt{parse\_r}~$= 1.00$ with three examples; (3)~without void-B examples, models never spontaneously acknowledge epistemic limits (void usage~$= 0\%$); (4)~with void-B examples, models generate 5.4 void markers per trace and resolve 67--97\% through structured investigation cycles; and (5)~void-B cascades emerge naturally, where resolving one unknown generates new unknowns at deeper epistemic levels.
+
+We provide a reference parser, a three-axis evaluation framework (Structural~/ Meaning~/ Provenance), and 60~high-quality reasoning traces as training data. We argue that the void-B resolution cycle---\texttt{.}~observe $\to$ \texttt{?}~mark unknown $\to$ \texttt{>}~investigate $\to$ \texttt{:}~update---is the structural minimum for directed machine learning, and that the training data deficit, not architectural incapacity, is the primary barrier to epistemic humility in current LLMs.
+
+This second edition adds a semantic layer. The three conventions left informal in the first edition---what an atomic value means, what merging two documents means, and when the void marker \texttt{?} is mandatory---are now normative rules, each backed by a published, machine-verified theorem from the Dual-Rail Carrier Program (twelve releases with complete proofs, kernel-checked Lean~4 artifacts, and axiom audits; series hub: \url{https://github.com/ycmath/dual-rail-carrier-program}). Concretely: atomic values become dual-rail, so \emph{unknown} is structurally distinct from \emph{conflict}; merge is a kernel-checked CRDT join in which conflict is a value rather than an exception or a last-writer-wins loss; retraction is monotone, so the append-only property is derived from a theorem rather than decreed by policy; resolution records are a provably \emph{sufficient} audit surface, not merely a necessary one; and the void marker becomes mandatory exactly outside the self-dual safe fragment, replacing a style norm with a mechanical rule. The surface syntax is unchanged, version~1 documents parse unchanged, and all first-edition empirical results carry over intact.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+\label{sec:intro}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+The dominant paradigm for inter-agent and agent-internal communication in AI systems is JSON---a format designed in 2001 for human-readable web APIs~\citep{crockford2006json}. This creates a systematic \emph{token tax}: 39--42\% of transmitted tokens carry no semantic content, serving only as structural punctuation (\texttt{\{\}}, \texttt{[]}, \texttt{""}, \texttt{:}, \texttt{,}) required by the JSON grammar. In multi-agent pipelines, this overhead compounds multiplicatively at each communication hop.
+
+The token efficiency problem is well-defined and solvable. The more consequential problem is epistemic. Current LLMs trained predominantly on JSON and natural language have no structural mechanism for representing the \emph{boundary} between known and unknown states at inference time. They can assert with high confidence, hedge with probability estimates, or refuse entirely---but they cannot say, within a structured notation that persists through a reasoning chain: ``I know this, I do not yet know \emph{this}, and I will look \emph{here} to find out.''
+
+This paper introduces \textbf{WCY}, a line-oriented format that addresses both problems. The five-character token at the center of the design is the void-B marker (\texttt{?}), which encodes Charles Sanders Peirce's abductive inference mode~\citep{peirce1934collected} as syntax: the only reasoning mode capable of generating genuinely new knowledge.
+
+\subsection{Contributions}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{WCY format specification v1.1} with formal grammar, three encoding modes, and a reference parser (\S\ref{sec:format}).
+  \item \textbf{Theoretical grounding} across three independent frameworks: Peircean semiotics, monad transformer category theory, and operational epistemology (\S\ref{sec:theory}).
+  \item \textbf{Empirical validation} across nine experiments covering token efficiency, format acquisition, void-B generation and resolution, and cascade dynamics (\S\ref{sec:experiments}).
+  \item \textbf{Training data}: 60 WCY reasoning traces spanning 8 domains, with explicit void-B resolution cycles (\S\ref{sec:data}).
+  \item \textbf{Open-source artifacts}: parser, evaluation framework, trace dataset, and automated generation pipeline.
+\end{enumerate}
+
+\subsection{Scope and Non-Goals}
+
+WCY does not replace transport protocols (HTTP, WebSocket) or orchestration frameworks (MCP~\citep{anthropic2024mcp}, A2A~\citep{google2025a2a}). It operates at the serialization layer---the content of messages, not their envelope. WCY is also not a claim about consciousness or subjective experience. The epistemic self-awareness we describe is operational: the capacity to represent unknown states and act from that representation.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{WCY Format Specification}
+\label{sec:format}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Design Axioms}
+
+WCY is derived bottom-up from 14 axioms about transformer-based LLM cognition, organized in three tiers:
+
+\textbf{Mechanical constraints} (5 axioms) are mathematical necessities of transformer architecture: sequential unidirectional token consumption, fixed context windows, BPE tokenization as the perceptual atom, softmax attention as probability distribution, and autoregressive generation.
+
+\textbf{Cognitive properties} (6 axioms) are experimentally confirmed consequences: LLMs are pattern completion engines that prefer shallow nesting, local over global coherence, positional addressing over named addressing, and operate on semantic chunks.
+
+\textbf{Ecological properties} (3 axioms) arise from deployment: stateless multi-instance operation, strong training distribution bias, and an emerging role as tool users requiring source provenance tracking.
+
+\subsection{Phase Markers}
+
+Each WCY line begins with exactly one of five phase markers followed by a space:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}clll@{}}
+\toprule
+\textbf{Marker} & \textbf{Phase} & \textbf{WCY Cycle} & \textbf{Function} \\
+\midrule
+\texttt{.} & observe & Watch   & Confirmed fact; no inference \\
+\texttt{:} & infer   & Compute & Derived conclusion; \texttt{conf=}, \texttt{from=} \\
+\texttt{>} & act     & Yield   & Output or external call \\
+\texttt{\textasciitilde} & meta & --- & Schema / context declaration \\
+\texttt{!} & exception & --- & Error, warning, or unresolvable void \\
+\bottomrule
+\end{tabular}
+\caption{WCY phase markers and their roles in the Watch~$\to$~Compute~$\to$~Yield cycle.}
+\label{tab:markers}
+\end{table}
+
+The \texttt{?} prefix is not a standalone marker but a slot prefix appearing within \texttt{:}~lines, denoting a void-B expression:
+
+\begin{lstlisting}
+: ?diagnosis  hint=fever+cough+duration  conf_range=0.4..0.8
+\end{lstlisting}
+
+\subsection{Slot Syntax}
+
+Slots are whitespace-separated tokens within a line. The pipe character (\texttt{|}) is an optional separator recognized by the v1.1 parser (acquired from models' spontaneous usage under complex data):
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Syntax} & \textbf{Type} & \textbf{Example} \\
+\midrule
+\texttt{tag=value}      & Named slot          & \texttt{conf=0.88} \\
+\texttt{bare\_value}    & Positional slot     & \texttt{Kim 45 38.5} \\
+\texttt{?tag}           & Void-B marker       & \texttt{?diagnosis} \\
+\texttt{from=N,M}       & Provenance chain    & \texttt{from=3,7} \\
+\texttt{conf=0.xx}      & Confidence [0,1]    & \texttt{conf=0.82} \\
+\texttt{conf\_range=L..H} & Void-B bound      & \texttt{conf\_range=0.3..0.7} \\
+\texttt{hint=...}       & Exploration target  & \texttt{hint=labs+imaging} \\
+\bottomrule
+\end{tabular}
+\caption{WCY slot syntax.}
+\label{tab:slots}
+\end{table}
+
+\subsection{Three Encoding Modes}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}llcc@{}}
+\toprule
+\textbf{Mode} & \textbf{Syntax} & \textbf{vs.\ JSON pretty} & \textbf{Use case} \\
+\midrule
+Positional & Bare slots only  & $-54\%$ & AI-to-AI, schema pre-shared \\
+Tagged     & \texttt{tag=value} all slots & $-40\%$ & Semantic search, external memory \\
+Hybrid (rec.) & \texttt{\textasciitilde} schema + positional & $-50\%$ & Balanced \\
+\bottomrule
+\end{tabular}
+\caption{Three WCY encoding modes and their token costs relative to JSON pretty-print.}
+\label{tab:modes}
+\end{table}
+
+\subsection{Structural Rules}
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item One phase marker per line, followed by a space
+  \item Newline~$=$~$\delta$-boundary (information firewall between expressions)
+  \item Blank line~$=$~semantic block boundary
+  \item Two-space indent~$=$~subscope; maximum depth~2
+  \item No forward references: \texttt{from=N} requires $N <$ current line number
+  \item Void-B markers (\texttt{?tag}) appear only in \texttt{:}~lines
+\end{itemize}
+
+\subsection{The Void-B Resolution Cycle}
+
+The four-step cycle constitutes WCY's core epistemic primitive:
+
+\begin{lstlisting}
+: ?diagnosis  hint=labs+imaging  conf_range=0.4..0.8    (1) mark unknown
+> order  CT_scan  reason=from=3                          (2) directed action
+. CT_result  mass_in_RUL  size=2.3cm                    (3) new observation
+: diagnosis=adenocarcinoma  conf=0.82  from=3,5         (4) resolved
+\end{lstlisting}
+
+Each step is necessary. Step~(1) without Step~(3) is unfulfilled hypothesis. Step~(3) without Step~(1) is observation without context. Step~(4) without \texttt{from=3,5} is a conclusion without traceable warrant.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Theoretical Grounding}
+\label{sec:theory}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Semiotic Analysis: Abduction as Syntax}
+
+Peirce's tripartite sign classification distinguishes \emph{icon} (resemblance), \emph{index} (causal connection), and \emph{symbol} (convention)~\citep{peirce1934collected}. The WCY markers cover all three types and all three of Peirce's reasoning modes:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}clll@{}}
+\toprule
+\textbf{Marker} & \textbf{Semiotic type} & \textbf{Reasoning mode} & \textbf{Rationale} \\
+\midrule
+\texttt{.} & Icon    & Assertion     & Minimality resembles completeness \\
+\texttt{:} & Index   & Deduction     & Points to causal derivation \\
+\texttt{>} & Index+Icon & ---         & Points to effect; arrow resembles direction \\
+\texttt{\textasciitilde} & Icon & ---  & Wave form resembles self-reference \\
+\texttt{!} & Symbol  & ---           & Conventional alarm signal \\
+\texttt{?} & Symbol+absent-index & \textbf{Abduction} & Points to what is not yet known \\
+\bottomrule
+\end{tabular}
+\caption{Peircean semiotic analysis of WCY markers. The void-B marker~(\texttt{?}) uniquely encodes abductive stance---the only reasoning mode capable of generating new knowledge.}
+\label{tab:semiotics}
+\end{table}
+
+The three components of a well-formed void-B expression correspond precisely to Peirce's abductive structure: \texttt{?tag} (the explanandum), \texttt{hint=} (the abductive constraint), and \texttt{conf\_range=} (the bound on plausible explanations). JSON has no equivalent because JSON describes present values only; abduction requires representing the \emph{absence} of a value together with the direction of its acquisition.
+
+\subsection{Category-Theoretic Analysis: WCY as Monad Transformer Stack}
+
+The Watch~$\to$~Compute~$\to$~Yield cycle corresponds to three monad operations \citep{moggi1991notions,maclane1978categories}:
+
+\begin{align}
+  \texttt{.}~\text{observe} &\;\longleftrightarrow\; \mathtt{unit} : A \to M(A) \\
+  \texttt{:}~\text{infer}~\texttt{from=} &\;\longleftrightarrow\; \mathtt{bind} : M(A) \to (A \to M(B)) \to M(B) \\
+  \texttt{>}~\text{act} &\;\longleftrightarrow\; \mathtt{extract} : M(A) \to A \text{ (side effect)}
+\end{align}
+
+where $M(A) = \texttt{WCYContext}\{\textit{value}: A,\; \textit{conf}: [0,1],\; \textit{from}: [\mathbb{N}],\; \textit{block}: \mathbb{N}\}$.
+
+More precisely, WCY implements a monad transformer stack:
+\[
+\texttt{WCY} = \underbrace{\texttt{WriterT}(\texttt{from=})}_{\text{provenance}} \circ \underbrace{\texttt{ReaderT}(\texttt{\textasciitilde meta})}_{\text{schema}} \circ \underbrace{\texttt{EitherT}(\texttt{!})}_{\text{failure}} \circ \underbrace{\texttt{ContT}(\texttt{?})}_{\text{suspended computation}}
+\]
+
+The void-B marker corresponds to Haskell's \texttt{callCC}~\citep{moggi1991notions}---a request for a continuation function that will eventually fill this position. This is why \texttt{?} cannot exist in JSON: JSON describes completed values; \texttt{ContT} requires representing deferred computation within the same syntax.
+
+The three monad laws hold: left identity (\texttt{.} immediately followed by \texttt{:} $\equiv$ direct inference), right identity (re-lifting a \texttt{:} result to \texttt{.} changes nothing), and associativity (\texttt{from=} chain order is irrelevant to the provenance result, confirmed empirically in~\S\ref{subsec:provenance}).
+
+\subsection{Operational Epistemology: Minimum Conditions for Self-Awareness}
+
+We define \emph{machine epistemic self-awareness} operationally: the capacity to represent, at inference time, the distinction between known and unknown states, and to generate directed actions from that distinction. Four elements are necessary and no strict subset is sufficient:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}llp{5.5cm}@{}}
+\toprule
+\textbf{Element} & \textbf{WCY encoding} & \textbf{Without this element} \\
+\midrule
+Known state representation & \texttt{.} observe & No baseline; boundary undefinable \\
+Boundary representation & \texttt{?} void-B & Hallucination fills the gap silently \\
+Directed exploration & \texttt{hint=} $+$ \texttt{>} act & Random or no exploration; no learning signal \\
+Knowledge integration & \texttt{:} resolved \texttt{from=?,obs} & No growth; observation does not update state \\
+\bottomrule
+\end{tabular}
+\caption{Four necessary conditions for machine epistemic self-awareness and their WCY encodings.}
+\label{tab:epistemic}
+\end{table}
+
+\begin{claimbox}
+\textbf{Claim.} The void-B resolution cycle (\texttt{?} $\to$ \texttt{>} $\to$ \texttt{.} $\to$ \texttt{:}) is the structural minimum for directed learning. Without an explicit representation of unknown states, a system cannot distinguish between confident correct answers and confident incorrect answers. The only difference between knowledge and hallucination, absent void-B, is whether the world happens to confirm the output.
+\end{claimbox}
+
+%% ─────────────────────────────────────────────────────────────────────────────
+% ============================================================
+% NEW MAJOR SECTION for the v2 edition — to be inserted as a new
+% \section immediately AFTER the existing "Theoretical Grounding"
+% section and BEFORE "Empirical Results".
+% Authored content; do not alter mathematical statements.
+% ============================================================
+
+\section{The WCY-2 Semantic Layer: Theorem-Backed Semantics}
+\label{sec:wcy2}
+
+The March 2026 edition of this paper presented WCY as a surface format
+with three semantic conventions left informal: what an atomic value
+means (a single \texttt{null}-like hole with several readings), what
+merging two documents means (undefined, as in JSON), and when an agent
+must emit the void marker \texttt{?} (a style norm; the zero-shot
+emission rate was 0\%). In the intervening months the design questions
+behind those conventions were pursued mathematically, growing into the
+\emph{Dual-Rail Carrier Program} --- a series of twelve machine-verified
+releases (complete proofs, core Lean~4 artifacts with kernel axiom
+audits, and independent replays; series hub:
+\url{https://github.com/ycmath/dual-rail-carrier-program}). This section
+closes the circle: each formerly informal convention is now a normative
+rule backed by a published theorem, cited by DOI. The full specification
+is \texttt{SPEC.md} in the repository; we summarize the layer here.
+
+\subsection{Dual-rail atoms: unknown is not conflict}
+
+An atomic value is a pair of evidence rails $(a, r)$ ---
+\emph{asserting} and \emph{refuting} evidence --- with four states:
+$\mathrm{UNK} = (0,0)$ (no evidence), $\mathrm{TRU} = (1,0)$,
+$\mathrm{FAL} = (0,1)$ (the \emph{resolved face}), and
+$\mathrm{CON} = (1,1)$ (conflicting evidence). This is the dual-rail
+carrier D4 underlying Belnap's four-valued logic; the logic of these
+states --- including the obstruction-theoretic reason \emph{unknown} and
+\emph{conflict} must be distinguished, and the calculus of conservative
+extensions used for schema evolution (\S\ref{sec:wcy2-schema}) --- is
+developed with complete proofs in the series release
+\emph{Finite-Energy Epistemic Logic} (doi:10.5281/zenodo.21800031).
+JSON's \texttt{null} ambiguity (unknown / inapplicable / conflicting /
+asserted-empty) is thereby resolved structurally. In the surface syntax,
+rails appear as optional value suffixes
+(\texttt{tag=v\^{}T/\^{}F/\^{}U/\^{}C}) and as the retraction sugar
+\texttt{tag!=v}; version~1 documents parse unchanged, with every atom on
+the resolved face.
+
+\subsection{Merge is the railwise join, and its laws are kernel-checked}
+
+The merge of two documents joins shared atoms railwise:
+$(a_1,r_1) \sqcup (a_2,r_2) = (a_1 \lor a_2,\, r_1 \lor r_2)$ ---
+evidence accumulates, nothing is lost. The semilattice laws this relies
+on are not tested but \emph{proved}: the repository ships a core Lean~4
+library (\texttt{lean/wcymerge/}, ten theorems, all axiom-free ---
+associativity, commutativity, idempotence, the $\mathrm{UNK}$ identity,
+absorption, the least-upper-bound law, conflict surfacing
+$\mathrm{TRU} \sqcup \mathrm{FAL} = \mathrm{CON}$, and monotonicity),
+with the associativity computation also published, under the same kernel
+discipline, in the series capstone (doi:10.5281/zenodo.21870654).
+Consequently a WCY-2 store is a bounded join-semilattice: replicas merge
+in any order, repeated or batched, with identical results --- the
+defining property of a state-based CRDT --- and \emph{conflict is a
+value}, never an exception and never a last-writer-wins loss.
+
+\subsection{Mutation discipline: monotone is free, negation is priced}
+
+On the resolved face the minimal number of negations a function needs
+equals its chain-decrease number, $\nu(f) = \mathrm{dec}(f)$, and
+$\mathrm{dec}(f) = 0$ exactly for monotone $f$ --- the exact law of
+\emph{The Price of NOT on D4} (doi:10.5281/zenodo.21800033). WCY-2
+turns the law into a discipline: adding evidence on either rail is
+monotone and therefore free; \emph{retraction is not deletion} but the
+addition of refuting evidence (\texttt{tag!=v}) --- itself monotone ---
+so the store is append-only as a theorem consequence rather than a
+policy; and the only genuinely non-monotone acts (overriding a
+resolution) are exactly the operations that must be logged.
+
+\subsection{The audit surface is one theorem wide}
+
+Which steps need an audit trail? The carrier's symmetry receptor
+$H^1(V_4;\mathbb{F}_2)$ has exactly three nonzero characters, realized
+by the negation boundary (priced by $\mathrm{dec}$), the monotone rail
+swap (free bookkeeping), and the \emph{R-flip} --- the character
+detecting exactly the operations that move the resolved face, i.e.\
+resolutions of $\mathrm{UNK}$/$\mathrm{CON}$. The capstone release
+proves the R-flip is the \emph{unique} essential degree-one obstruction
+and that every higher or parallel structure reduces to it or separates
+from it (Theorem~0; doi:10.5281/zenodo.21870654, with the three
+separations at doi:10.5281/zenodo.21868976, 10.5281/zenodo.21869440,
+and 10.5281/zenodo.21869871). The format consequence: logging
+resolution records --- lines of the form
+\texttt{:\ resolve tag was=C now=F from=...\ why=...} --- is not merely
+necessary but \emph{sufficient}: WCY-2's audit surface is minimal by
+theorem, not by design taste.
+
+\subsection{Confidence and versions are level-indexed, and must stay so}
+
+The carrier's internal level tower is \emph{split-positive}: a levelwise
+obstruction value exists at every level, while no nonzero
+reduction-persistent class exists --- the level index is irreducible
+data (doi:10.5281/zenodo.21871946; the underlying exactness principle
+appears in doi:10.5281/zenodo.21869871). WCY-2 therefore stores
+confidence and version history as a level-indexed family, of which
+version~1's \texttt{conf\_range=} is the coarsest case; a single scalar
+``current confidence'' may be derived for display but must not replace
+the family. The same exactness argument grounds a negative rule: a mark
+that survives every refinement level is a mark that was never
+obstructed, so ``verified once, trusted forever'' flags across levels
+are unsound unless each level's check is recorded.
+
+\subsection{When \texttt{?} is mandatory: the safe fragment}
+
+The weakest empirical result of the March edition was that models never
+emit \texttt{?} unprompted. WCY-2 replaces the style norm with a
+mechanical rule, using the series' characterization of what is
+computable without resolving: on the resolved face the closed core
+expresses exactly the \emph{self-dual} Boolean functions ---
+$2^{2^{n-1}}$ of them --- and one resolved constant completes the
+fragment (doi:10.5281/zenodo.21866741). A query through self-dual
+combinators on resolved atoms is \emph{safe}: no resolution, no audit,
+no \texttt{?}. A query that touches an unresolved atom or needs a
+non-self-dual combinator without its completion is \emph{unsafe}: the
+implementation must either perform and log a resolution or emit
+\texttt{?tag hint=...\ conf\_range=...}. The void marker thus appears
+exactly where the mathematics says an answer does not yet exist ---
+the void-B cycle itself becoming a lifting problem, whose failures are
+recorded as obstruction lines rather than silently dropped.
+
+\subsection{Schema evolution and JSON interoperability}
+\label{sec:wcy2-schema}
+
+Schema changes are \emph{conservative pointed extensions} (typed open
+update): new unknowns may be introduced, resolved data must not change
+state, and non-conservative extensions are detected by the
+$T_0$-obstruction calculus (doi:10.5281/zenodo.21800031), with the
+boundary of how much operational structure can be added before collapse
+delimited by the maximality result doi:10.5281/zenodo.21866478. For
+interoperability, every JSON document embeds losslessly as a
+resolved-face WCY-2 document (leaves become asserting atoms;
+\texttt{null} becomes $\mathrm{UNK}$), and the resolved-face projection
+is its left inverse; projection fails soft on $\mathrm{UNK}$ and
+$\mathrm{CON}$ (a \texttt{null} plus a sidecar of unresolved paths ---
+conflict is never silently coerced). All v2 additions are ordinary slots
+under the v1 grammar, so v1 parsers read v2 documents; the reference
+parser (v2.0) was verified field-identical to v1 semantics on the entire
+540-trace corpus.
+
+\subsection{Summary}
+
+\begin{center}
+\begin{tabular}{ll}
+\hline
+rule & backing theorem (DOI) \\
+\hline
+dual-rail atoms; unknown $\ne$ conflict & 10.5281/zenodo.21800031 \\
+merge $=$ railwise join; CRDT laws & kernel-checked in-repo; 10.5281/zenodo.21870654 \\
+retraction monotone; append-only derived & 10.5281/zenodo.21800033 \\
+audit $=$ resolution records, sufficient & 10.5281/zenodo.21870654 (Thm.~0) \\
+level families never compressed & 10.5281/zenodo.21871946 \\
+mandatory \texttt{?} outside the safe fragment & 10.5281/zenodo.21866741 \\
+conservative schema evolution & 10.5281/zenodo.21800031, 21866478 \\
+no cross-level persistent trust & 10.5281/zenodo.21869871 \\
+\hline
+\end{tabular}
+\end{center}
+
+The empirical results of Section~\ref{sec:empirical} concern the surface
+syntax, which is unchanged; they carry over to v2 intact.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Empirical Results}
+\label{sec:experiments}
+\label{sec:empirical}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+All experiments used Claude Sonnet (claude-sonnet-4-20250514) with temperature 0. Token counting used the \texttt{cl100k\_base} tiktoken encoding.
+
+\subsection{Token Efficiency}
+\label{subsec:tokens}
+
+\paragraph{Structured data (Phase~1).}
+Token savings across simple (5~fields), medium (23~fields), and complex (32~fields) datasets:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Format} & \textbf{Simple} & \textbf{Medium} & \textbf{Complex} & \textbf{vs.\ JSON pretty} \\
+\midrule
+JSON pretty    & 56  & 259 & 393 & baseline \\
+JSON compact   & 40  & 151 & 234 & $-41\%$ \\
+WCY hybrid     & 41  & 150 & 223 & $-43\%$ \\
+WCY positional & 31  & 119 & 209 & $-54\%$ \\
+\bottomrule
+\end{tabular}
+\caption{Token counts and savings across data complexity levels. WCY hybrid matches JSON compact while also encoding semantic intent via phase markers.}
+\label{tab:tokens}
+\end{table}
+
+\paragraph{Scale invariance (E1-A).}
+Token savings hold at 10, 50, 200, and 500 rows ($-49\%$ to $-50\%$ for WCY hybrid vs.\ JSON pretty). No degradation point was found.
+
+\paragraph{Tool-call schemas (E2-B).}
+Function-calling schema definitions: $-66\%$ (641~$\to$~216 tokens). Tool invocations: $-63\%$. The tools/list response in MCP achieves $-71.8\%$, the single highest-impact WCY application identified.
+
+\paragraph{MCP protocol exchange (E4-A).}
+Ten representative MCP exchange types (requests, responses, errors, batch calls): $-60.9\%$ total, range $-45.5\%$ (error messages) to $-71.8\%$ (schema responses).
+
+\paragraph{Multi-agent pipeline (E2-A, E2-C).}
+A 3-agent, 3-round pipeline (Intake~$\to$~Diagnostician~$\to$~Treatment): $-20\%$ total tokens ($-8\%$ input, $-40\%$ output). Output tokens---agent-generated content---show the largest savings, as agents produce more concise reasoning in WCY. The $-40\%$ output reduction is a compounding effect: each agent's output becomes the next agent's input.
+
+\paragraph{Verification pipeline (E2-D).}
+Generator--verifier two-stage pipeline across 5 code tasks: $-60.5\%$ generator output, $-51.4\%$ verifier input, $-39.3\%$ total. Verifier output \emph{increased} by~$+7.3\%$, representing added provenance structure (9--19 \texttt{from=} references per task) rather than verbosity.
+
+\subsection{Format Acquisition via Few-Shot Induction}
+\label{subsec:fewshot}
+
+A key finding of Phase~1 (E1-C) was that models revert to markdown and tree structures under complex reasoning load, producing \texttt{parse\_r}~$= 0.29$ for cardiovascular risk stratification. Phase~3 tested whether few-shot examples resolve this:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}llc@{}}
+\toprule
+\textbf{Condition} & \textbf{Task} & \textbf{parse\_r} \\
+\midrule
+E1-C: no few-shot examples & Cardiovascular risk stratification & $0.29$ \\
+E6-A: 3 few-shot examples  & Cardiovascular risk stratification & $1.00$ \\
+E6-A: 3 few-shot examples  & Differential diagnosis             & $1.00$ \\
+E6-A: 3 few-shot examples  & Algorithm complexity analysis      & $1.00$ \\
+\bottomrule
+\end{tabular}
+\caption{Effect of few-shot examples on WCY format compliance. The identical task achieves \texttt{parse\_r} 0.29 without examples and 1.00 with three examples, demonstrating that format acquisition is a training data problem, not a capacity problem.}
+\label{tab:fewshot}
+\end{table}
+
+The \texttt{from=} rates exceeded 100\% in several conditions (e.g., 123\% for Sonnet on cardiovascular), indicating multi-premise inferences where a single \texttt{:} line cites multiple prior lines. This spontaneous multi-hop provenance was not explicitly instructed.
+
+\subsection{Void-B Generation and Resolution}
+\label{subsec:voidb}
+
+With zero void-B examples in few-shot prompts, models generated void-B markers in 0\% of inferences across all tasks and models (Phases~1--3). With explicit void-B resolution examples in Phase~4:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Domain} & \textbf{\texttt{?} generated} & \textbf{\texttt{?} resolved} & \textbf{Rate} & \textbf{Cycle} \\
+\midrule
+Medical (weight loss)       & 7 & 5 & $71\%$ & \checkmark \\
+Code (memory leak)          & 5 & 5 & $100\%$ & \checkmark \\
+Scientific (crystallization)& 4 & 3 & $75\%$ & \checkmark \\
+Strategic (market entry)    & 7 & 5 & $71\%$ & \checkmark \\
+Philosophical (causation)   & 7 & 7 & $100\%$ & \checkmark \\
+Epistemological (cascade)   & 6 & 5 & $83\%$ & \checkmark \\
+\midrule
+\textbf{Mean} & \textbf{5.4} & \textbf{4.2} & \textbf{67\%} & 6/6 \\
+\bottomrule
+\end{tabular}
+\caption{Void-B generation and resolution across domains (Phase~4, E7-A). All six traces pass quality gates (parse\_r $\geq 0.70$, \texttt{?}~generated $\geq 1$, resolution $\geq 50\%$).}
+\label{tab:voidb}
+\end{table}
+
+\subsection{Pipeline-Scale Generation}
+\label{subsec:pipeline}
+
+Phase~5 extended generation to a systematic $8~\text{domain} \times 3~\text{difficulty} \times 2~\text{void-depth}$ matrix (48 combinations). All 48 traces passed all quality gates (100\% gate passage rate). Average void-B per trace: 5.2; average resolution rate: 95\%. The improvement over hand-crafted traces (67\%) reflects more focused system prompts and explicit resolution requirements in the pipeline.
+
+\subsection{Void-B Cascade (E7-C)}
+\label{subsec:cascade}
+
+The aspirin cardiovascular claim validation trace demonstrated the cascade structure predicted by the Continuation monad analysis:
+
+\begin{lstlisting}
+: ?claim_scope    hint=all_CVD_vs_specific   conf_range=0.1..0.4  (gen. 1)
+: ?evidence_qual  hint=RCT_heterogeneity     conf_range=0.2..0.5
+: ?universality   hint=contraindications     conf_range=0.1..0.3
+> investigate_primary_prevention  reason=from=3
+. finding  benefit_conditional_on_risk_profile
+: resolved_scope=conditional  conf=0.75  from=3,5
+: ?bleeding_risk  hint=NNT_vs_NNH_by_age    conf_range=0.4..0.7  (gen. 2)
+: ?individual_variation  hint=CYP2C19       conf_range=0.3..0.6
+! warning  original_claim_overgeneralization  from=1
+: corrected_claim="aspirin benefits selected high-risk populations"  conf=0.82
+\end{lstlisting}
+
+Resolution of three first-generation void-B markers generated two second-generation markers at deeper epistemic levels. The trace terminated with three explicit \texttt{!}~warnings and a revised claim at lower confidence than the original assertion. The void-B mechanism produced not merely uncertainty acknowledgment but a structurally justified claim revision.
+
+\subsection{Cross-Model Validation (E1-C)}
+\label{subsec:crossmodel}
+
+Experiments comparing Claude Sonnet and Haiku revealed a non-linear pattern under keyword-based evaluation: Sonnet WCY accuracy 62\% vs.\ Haiku 88\%. Re-evaluation using a three-axis framework (Structural~/ Meaning / Provenance) with LLM-as-judge meaning scoring revised Sonnet WCY to composite 0.89 vs.\ Haiku 0.77, consistent with model scale expectations. The original anomaly was confirmed as a keyword-matching artifact: Sonnet produces richer paraphrases that contain correct answers without matching exact evaluation keywords.
+
+Input token savings are model-invariant: both Sonnet and Haiku show $+30\%$ to $+46\%$ reduction regardless of task type, confirming that WCY's efficiency gain is a property of the format, not of any specific model.
+
+\subsection{Provenance Validity}
+\label{subsec:provenance}
+
+In the 3-agent, 3-round shared-state pipeline (E2-C), \texttt{from=} reference validity was 45/45 (100\%) across the Treatment agent's complete output. No invalid line references were generated despite a dynamically growing context across three rounds. In the verification pipeline (E2-D), WCY verifiers generated 9--19 \texttt{from=} references per task, structurally linking each verdict to the specific generator output line under assessment---a property not achievable with free-form prose output.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Training Data and the Acquisition Gap}
+\label{sec:data}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{The Training Data Hypothesis}
+
+Current frontier LLMs are trained on text that overwhelmingly favors three epistemic stances: (1)~confident assertion, (2)~hedged assertion (\emph{``it is possible that\ldots''}), and (3)~refusal (\emph{``I don't know''}). None of these encode the directed exploration structure that void-B requires:
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Hedged assertion}: acknowledges uncertainty; terminates without exploration
+  \item \textbf{Refusal}: acknowledges uncertainty; terminates
+  \item \textbf{Void-B}: encodes uncertainty, direction, action, and integration---within one structured notation
+\end{itemize}
+
+The void-B pattern (mark unknown $\to$ investigate $\to$ observe $\to$ resolve) almost never appears in natural text because it requires the author to simultaneously know that they do not know something specific, know which direction to search, and integrate new observations back into a structured reasoning chain.
+
+\subsection{Dataset}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{File} & \textbf{Traces} & \textbf{Type} & \textbf{Avg \texttt{?}} & \textbf{Avg res.} \\
+\midrule
+\texttt{wcy\_reasoning\_traces.jsonl} & 6  & Reasoning (no void-B)       & 0.0 & --- \\
+\texttt{wcy\_void\_cycles.jsonl}       & 6  & Void-B cycle (hand-crafted) & 6.2 & $61\%$ \\
+\texttt{wcy\_traces\_v1\_clean.jsonl}  & 48 & Void-B cycle (pipeline)     & 5.2 & $95\%$ \\
+\midrule
+\textbf{Total} & \textbf{60} & & \textbf{4.5} & \textbf{90\%}\\
+\bottomrule
+\end{tabular}
+\caption{WCY training dataset composition. All traces passed three quality gates: \texttt{parse\_r} $\geq 0.70$, void\_generated~$\geq 1$, resolution\_rate~$\geq 0.50$.}
+\label{tab:dataset}
+\end{table}
+
+The pipeline-generated traces cover 8 domains (mathematical, legal, code, strategic, philosophical, scientific, medical, engineering), 3 difficulty levels, and 2 void-depth categories (single-resolution and cascade). Domain balance and difficulty distribution are controlled by the generation matrix.
+
+\subsection{Quality Framework}
+
+Each trace is scored on three axes:
+
+\textbf{Structural (S)}: Parser-based compliance. Weighted combination of parse rate, phase marker validity, depth compliance, \texttt{from=} reference validity, and void-B hint inclusion rate.
+
+\textbf{Meaning (M)}: LLM-as-judge semantic equivalence. Resolves the keyword-matching false negative documented in~\S\ref{subsec:crossmodel}.
+
+\textbf{Provenance (P)}: \texttt{from=} chain validity and root reachability. Measures whether reasoning chains are structurally complete and traceable to source observations.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Validation Summary}
+\label{sec:validation}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}p{4.5cm}p{3.5cm}p{4cm}c@{}}
+\toprule
+\textbf{Criterion} & \textbf{Target} & \textbf{Result} & \textbf{Status} \\
+\midrule
+Token efficiency (pipeline)    & $\geq 30\%$ reduction   & $-20\%$ multi-agent; $-61\%$ MCP & \checkmark \\
+Scale stability                & $\geq 95\%$ accuracy 10--200 rows & $100\%$ at 10--500 rows & \checkmark \\
+Output quality                 & No degradation vs.\ JSON & Equal; $-40\%$ output tokens & \checkmark \\
+Void-B processing              & $\geq 80\%$ resolution  & $100\%$ + pipeline-ready output & \checkmark \\
+Provenance validity            & $\geq 90\%$ valid refs  & $45/45$ (100\%); 9--19 refs/task & \checkmark \\
+Tool-call savings              & $\geq 35\%$ vs.\ JSON   & $-65\%$ schema; $-61\%$ MCP & \checkmark \\
+Verification overhead          & Verifier input $\geq 20\%$ & $-51.4\%$ verifier; $-39\%$ total & \checkmark \\
+MCP format replacement         & $\geq 40\%$ exchange reduction & $-60.9\%$ 10 exchange types & \checkmark \\
+Cross-model accuracy           & Both models $\geq 90\%$ & Sonnet 0.89 / Haiku 0.77$^\dagger$ & $\sim$ \\
+\bottomrule
+\multicolumn{4}{@{}l@{}}{\footnotesize $^\dagger$ Haiku below target under composite scoring; cross-model pattern requires further investigation.}
+\end{tabular}
+\caption{Pre-registered success criteria and results across nine experiments.}
+\label{tab:validation}
+\end{table}
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Related Work}
+\label{sec:related}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\paragraph{Structured formats for LLMs.}
+TOON~\citep{toon2024} (Token-Oriented Object Notation) addresses JSON overhead through positional encoding. MoonBit~\citep{moonbit2024} explores AI-friendly programming language design. Neither system incorporates explicit epistemic state representation. Agora~\citep{agora2025} proposes a scalable LLM communication protocol but retains JSON serialization.
+
+\paragraph{Chain-of-thought and reasoning.}
+Chain-of-thought prompting~\citep{wei2022cot} externalizes reasoning into natural language. WCY is orthogonal: it structures that natural language into typed, traceable phase expressions. The \texttt{from=} slot provides machine-parseable provenance that CoT lacks. Process reward models~\citep{lightman2023prm} evaluate reasoning steps; WCY's structural annotations could provide supervision signals directly.
+
+\paragraph{Uncertainty quantification.}
+Calibration methods~\citep{guo2017calibration} apply post-hoc corrections to model confidence. Conformal prediction~\citep{angelopoulos2023conformal} provides coverage guarantees. WCY's \texttt{conf=} and \texttt{conf\_range=} are inference-time representations that complement these methods but operate at the semantic rather than statistical layer.
+
+\paragraph{Multi-agent communication.}
+AgentTaxo~\citep{agenttaxo2025} systematizes token costs in multi-agent systems, quantifying the overhead WCY addresses. MCP~\citep{anthropic2024mcp} and A2A~\citep{google2025a2a} define transport and orchestration protocols; WCY operates at the serialization layer below these.
+
+\paragraph{Knowledge representation and epistemology.}
+The open-world assumption in knowledge representation~\citep{brachman1985kr} distinguishes between ``known false'' and ``unknown.'' Void-B makes this distinction first-class syntax. Epistemic logic~\citep{hintikka1962ke} formalizes knowledge and belief; WCY provides a computational realization of the $K\neg K$ operator (knowing that one does not know).
+
+\paragraph{Formal neighbors of the v2 semantic layer.}
+The semantic layer of~\S\ref{sec:wcy2} has two close formal neighbors. Belnap's four-valued logic~\citep{belnap1977useful} supplies the \emph{value substrate}: the four states none~/ true~/ false~/ both, ordered by information content, with ``told nothing'' kept distinct from ``told both.'' State-based CRDTs~\citep{shapiro2011crdt} supply the \emph{merge discipline}: states form a join-semilattice, replicas merge by least upper bound, and convergence is insensitive to order, duplication, and batching. WCY-2 adopts both, and neither claim of novelty is made for them. Its distinguishing feature is the \emph{status} of the resulting laws: implementations of four-valued engines and CRDT libraries typically validate their algebraic laws by test suite, whereas the laws of the WCY-2 layer are backed by kernel-checked, axiom-audited machine proofs published under DOI (\S\ref{sec:wcy2}). A conforming implementation can therefore be checked against a theorem rather than against a corpus of examples.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Limitations and Future Work}
+\label{sec:limitations}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\paragraph{Addressed in v2.} Three questions the first edition left open in the body text---what an atomic value means, what merging two documents means, and when \texttt{?} is mandatory---are closed by the semantic layer of~\S\ref{sec:wcy2}, each by a cited theorem rather than by convention. The first edition's open question on inter-agent trust (below) is narrowed rather than closed.
+
+\paragraph{Cross-model scope.} All Phase~3--4 experiments used Claude Sonnet. The few-shot induction hypothesis predicts equivalent pattern acquisition in GPT-4o, Gemini, and open-source models with sufficient reasoning capacity; this has not been verified.
+
+\paragraph{Fine-tuning vs.\ few-shot.} The post-reasoning format switch observed in~\S\ref{subsec:cascade} (model completes WCY reasoning then reverts to markdown for summary) suggests that few-shot induction is not fully stable under output pressure. Fine-tuning on void-B resolution traces may be required for stable inference-time WCY generation.
+
+\paragraph{Deeply nested data.} WCY's maximum depth of~2 is a deliberate constraint from the shallow-nesting cognitive axiom. Use cases requiring deeper nesting will need an escape mechanism.
+
+\paragraph{Streaming.} The $\delta$-boundary semantics (newline as expression boundary) have implications for streaming: a partial line cannot be parsed. The streaming protocol implications are noted but not empirically tested.
+
+\paragraph{Type system.} WCY does not distinguish numeric from string slots; consumers must infer or schema must declare.
+
+\paragraph{Inter-agent trust.} The \texttt{conf=} field provides a structured basis for trust propagation across \texttt{from=} chains, but the formal computation (Dempster-Shafer, Bayesian, or other) is an open design question. Version~2 narrows it: confidence must be carried as a level-indexed family and may not be replaced by a single derived scalar (\S\ref{sec:wcy2}), which excludes aggregation schemes that collapse the levels, but does not select among the schemes that respect them.
+
+\paragraph{General-arity theory.} The mathematics underlying the semantic layer is established for the concrete carrier and the arities the cited releases treat. The general-arity theory is ongoing; rules stated here at fixed arity may admit sharper or more uniform statements once it is complete, and implementations should not read the present arity bounds as final.
+
+\paragraph{Implementation-defined behavior.} Two behaviors remain implementation-defined in the current specification and are scheduled for normativization in specification v0.2. First, \emph{block matching under merge}: which blocks of two independently authored documents are to be treated as the same block, and hence which atoms are joined rather than concatenated. Second, \emph{multi-valued assertion sidecars}: how an implementation reports a slot that has accumulated several mutually incompatible asserted values, beyond recording that the atom is in the conflicting state. Both are deliberately left open here rather than fixed by the reference implementation's incidental behavior.
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+JSON's 40\% structural overhead is a design artifact of the pre-LLM era. WCY eliminates it. That is the efficiency contribution.
+
+The epistemic contribution is the void-B marker. The empirical path from 0\% void-B usage (pre-few-shot) to 5.4 markers per trace (post-few-shot) demonstrates that structured epistemic humility is acquirable through training signal---that what appears to be a fundamental LLM limitation is, at least partially, a data problem. The 60 traces in this release are a starting point; the pipeline is open for community contribution.
+
+The name encodes the cycle. Watch what is (\texttt{.}). Compute what follows (\texttt{:}). Yield---and mark what remains unknown (\texttt{?}).
+
+One further thing happened between the two editions of this paper. A format that began as a way to write down what an agent does not know raised design questions---what is a value, what is a merge, when must the unknown be declared---that turned out to be mathematical questions, and pursuing them produced, en route, a body of machine-verified mathematics that stands on its own. That mathematics now returns the favor: it fixes the semantics of the format that provoked it. The loop from format to theory and back is closed. The practical consequence is the one that matters for anyone implementing WCY: the format's claims about itself are no longer design assertions but theorem references, each carrying a DOI in the table of~\S\ref{sec:wcy2}, checkable independently of this paper and of its author.
+
+\begin{claimbox}
+The void-B marker is not a feature. It is the minimum syntax for a model to know that it does not know.
+\end{claimbox}
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\section*{Acknowledgments}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+Experimental infrastructure ran on Apple M4 Pro (Mac Mini, 64\,GB unified memory). All API experiments used the Anthropic Messages API. 
+
+%% ─────────────────────────────────────────────────────────────────────────────
+\bibliographystyle{plainnat}
+\bibliography{references}
+%% ─────────────────────────────────────────────────────────────────────────────
+
+\appendix
+
+\section{WCY Format Specification v1.1 (Complete)}
+\label{app:spec}
+
+\subsection{Grammar (EBNF)}
+
+\begin{lstlisting}
+document   ::= (line | blank_line)*
+line       ::= indent* marker SPACE rest NEWLINE
+blank_line ::= NEWLINE
+marker     ::= '.' | ':' | '>' | '~' | '!'
+indent     ::= SPACE SPACE
+rest       ::= slot (separator slot)*
+separator  ::= SPACE+ | SPACE* '|' SPACE*
+slot       ::= special_slot | void_slot | tagval_slot
+               | backref_slot | bare_slot
+special_slot ::= 'from=' int_list
+               | 'conf_range=' float '..' float
+               | 'conf=' float
+               | 'hint=' value
+void_slot    ::= '?' WORD
+tagval_slot  ::= WORD '=' value
+backref_slot ::= '{' INT '}'
+bare_slot    ::= value
+value        ::= '"' [^"]* '"' | NONSPACE+
+int_list     ::= INT (',' INT)*
+\end{lstlisting}
+
+\subsection{Constraint Rules}
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item Phase marker is the first non-whitespace character of every non-blank line
+  \item Phase marker must be followed by a single space
+  \item \texttt{from=N} requires $N <$ current line number (no forward references)
+  \item Maximum indent depth: 2 levels (4 spaces)
+  \item \texttt{?tag} slots appear only in \texttt{:} lines
+  \item \texttt{conf} must be in $[0.0, 1.0]$
+  \item In \texttt{conf\_range=L..H}, $L \leq H$
+\end{enumerate}
+
+\section{Dataset Schema}
+\label{app:schema}
+
+\begin{lstlisting}[language={}]
+{
+  "id":                string,    // e.g. "v1_042_0"
+  "domain":            string,    // medical | code | math | ...
+  "difficulty":        string,    // simple | medium | complex
+  "void_depth":        string,    // single | cascade
+  "task":              string,    // task description
+  "void_instruction":  string,    // void-B specific instruction
+  "wcy_reasoning":     string,    // full WCY trace
+  "quality": {
+    "parse_rate":       float,    // fraction of lines parseable
+    "void_generated":   int,      // number of ?tags in trace
+    "void_resolved":    int,      // number of ?tags resolved
+    "resolution_rate":  float,    // void_resolved / void_generated
+    "infer_count":      int,
+    "act_count":        int,
+    "warning_count":    int,
+    "usable":           bool      // passed all quality gates
+  },
+  "model":             string,
+  "spec_version":      string,    // "1.1"
+  "type":              string,    // void_resolution_cycle | void_cascade
+  "usable":            bool
+}
+\end{lstlisting}
+
+\section{Change Log (v1.1 $\to$ v2)}
+\label{app:changelog}
+
+This appendix summarizes what changed between the March 2026 first edition
+(format specification v1.1) and the present second edition. \emph{The surface
+syntax did not change}: every v1.1 document is a valid v2 document with the
+same meaning, and all v1 empirical content in this paper---token efficiency,
+few-shot acquisition, void-B generation and resolution, cascades, cross-model
+comparison, provenance validity, and the 60-trace dataset---is reproduced
+unchanged.
+
+\paragraph{Specification document.} A normative \texttt{SPEC.md} was added to
+the repository. The first edition had no separate specification: the grammar in
+Appendix~\ref{app:spec} was the whole of it.
+
+\paragraph{Semantic layer (new).} Eight rules, each backed by a published,
+machine-verified theorem cited by DOI in the table of~\S\ref{sec:wcy2}:
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Dual-rail atoms.} A value carries asserting and refuting
+        evidence rails; \emph{unknown} and \emph{conflict} are structurally
+        distinct states, resolving JSON's \texttt{null} ambiguity.
+  \item \textbf{Merge is the railwise join.} Documents merge by taking the
+        least upper bound rail by rail; the semilattice laws are
+        kernel-checked, so a store is a state-based CRDT and conflict is a
+        value rather than an exception.
+  \item \textbf{Retraction is monotone.} Retraction adds refuting evidence
+        instead of deleting; append-only storage is therefore a theorem
+        consequence, not a policy decision.
+  \item \textbf{Audit is resolution records.} Logging the operations that move
+        the resolved face is not only necessary but \emph{sufficient}; the
+        audit surface is minimal by theorem.
+  \item \textbf{Level-indexed confidence and versions.} Confidence and version
+        history are a level-indexed family; a single scalar may be derived for
+        display but must not replace the family.
+  \item \textbf{No cross-level persistent trust.} ``Verified once, trusted
+        forever'' across refinement levels is unsound unless each level's
+        check is recorded.
+  \item \textbf{Mandatory \texttt{?} outside the safe fragment.} The void
+        marker is required exactly when a query leaves the self-dual safe
+        fragment or touches an unresolved atom---a mechanical rule replacing
+        the first edition's style norm.
+  \item \textbf{Conservative schema evolution.} Schema changes must be
+        conservative pointed extensions; JSON embeds losslessly on the
+        resolved face, and the projection back fails soft rather than
+        silently coercing conflict.
+\end{enumerate}
+
+\paragraph{Reference parser v2.} The parser was extended with the optional
+rail suffixes and the retraction sugar. It is v1-compatible, and was verified
+field-identical to v1 semantics on the entire 540-trace corpus.
+
+\paragraph{\texttt{wcy\_merge.py}.} A new reference merge implementation of the
+railwise join, including the conflict-surfacing and idempotence behavior the
+theorems require.
+
+\paragraph{\texttt{lean/wcymerge}.} A core Lean~4 library of ten theorems on
+the merge operation---associativity, commutativity, idempotence, the unknown
+identity, absorption, the least-upper-bound law, conflict surfacing, and
+monotonicity---all axiom-free under kernel audit.
+
+\paragraph{Archive.} The repository snapshot for this edition is archived at
+\texttt{doi:10.5281/zenodo.21886552}; the series hub carrying the twelve
+releases cited in~\S\ref{sec:wcy2} is
+\url{https://github.com/ycmath/dual-rail-carrier-program}.
+
+\end{document}

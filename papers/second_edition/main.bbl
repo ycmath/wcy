@@ -1,0 +1,111 @@
+\begin{thebibliography}{18}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Angelopoulos and Bates(2023)]{angelopoulos2023conformal}
+Anastasios~N. Angelopoulos and Stephen Bates.
+\newblock A gentle introduction to conformal prediction and distribution-free
+  uncertainty quantification, 2023.
+
+\bibitem[{Anthropic}(2024)]{anthropic2024mcp}
+{Anthropic}.
+\newblock Model context protocol ({MCP}).
+\newblock \url{https://modelcontextprotocol.io/}, 2024.
+
+\bibitem[Belnap(1977)]{belnap1977useful}
+Nuel~D. Belnap.
+\newblock A useful four-valued logic.
+\newblock In J.~Michael Dunn and George Epstein, editors, \emph{Modern Uses of
+  Multiple-Valued Logic}, pages 5--37. D.~Reidel, 1977.
+
+\bibitem[Brachman and Levesque(1985)]{brachman1985kr}
+Ronald~J. Brachman and Hector~J. Levesque.
+\newblock \emph{Readings in Knowledge Representation}.
+\newblock Morgan Kaufmann, 1985.
+
+\bibitem[Crockford(2006)]{crockford2006json}
+Douglas Crockford.
+\newblock \emph{{JSON}: The Fat-Free Alternative to {XML}}.
+\newblock 2006.
+\newblock Presented at XML 2006, Boston. \url{https://www.json.org/}.
+
+\bibitem[{Google Cloud}(2025)]{google2025a2a}
+{Google Cloud}.
+\newblock Agent-to-agent protocol ({A2A}).
+\newblock \url{https://developers.google.com/agent-space/a2a}, 2025.
+
+\bibitem[Guo et~al.(2017)Guo, Pleiss, Sun, and Weinberger]{guo2017calibration}
+Chuan Guo, Geoff Pleiss, Yu~Sun, and Kilian~Q. Weinberger.
+\newblock On calibration of modern neural networks.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2017.
+
+\bibitem[Hintikka(1962)]{hintikka1962ke}
+Jaakko Hintikka.
+\newblock \emph{Knowledge and Belief: An Introduction to the Logic of the Two
+  Notions}.
+\newblock Cornell University Press, 1962.
+
+\bibitem[{ICLR 2025 Workshop on Foundation Models in the
+  Wild}(2025)]{agenttaxo2025}
+{ICLR 2025 Workshop on Foundation Models in the Wild}.
+\newblock {AgentTaxo}: A taxonomy for understanding token costs in {LLM}
+  multi-agent systems.
+\newblock Workshop paper, 2025.
+
+\bibitem[Lightman et~al.(2023)Lightman, Kosaraju, Burda, Edwards, Baker, Lee,
+  Leike, Schulman, Sutskever, and Cobbe]{lightman2023prm}
+Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy
+  Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe.
+\newblock Let's verify step by step, 2023.
+
+\bibitem[Mac~Lane(1978)]{maclane1978categories}
+Saunders Mac~Lane.
+\newblock \emph{Categories for the Working Mathematician}.
+\newblock Springer, 2nd edition, 1978.
+
+\bibitem[Marro et~al.(2025)]{agora2025}
+Samuele Marro et~al.
+\newblock A scalable communication protocol for networks of large language
+  models, 2025.
+
+\bibitem[Moggi(1991)]{moggi1991notions}
+Eugenio Moggi.
+\newblock Notions of computation and monads.
+\newblock \emph{Information and Computation}, 93\penalty0 (1):\penalty0 55--92,
+  1991.
+
+\bibitem[{MoonBit Team}(2024)]{moonbit2024}
+{MoonBit Team}.
+\newblock Explore the design of an {AI}-friendly programming language.
+\newblock LLM4Code Workshop, 2024.
+
+\bibitem[Peirce(1934)]{peirce1934collected}
+Charles~Sanders Peirce.
+\newblock \emph{Collected Papers, Vol.\ 5: Pragmatism and Pragmaticism}.
+\newblock Harvard University Press, 1934.
+
+\bibitem[Shapiro et~al.(2011)Shapiro, Pregui\c{c}a, Baquero, and
+  Zawirski]{shapiro2011crdt}
+Marc Shapiro, Nuno Pregui\c{c}a, Carlos Baquero, and Marek Zawirski.
+\newblock Conflict-free replicated data types.
+\newblock In \emph{Stabilization, Safety, and Security of Distributed Systems
+  (SSS)}, pages 386--400. Springer, 2011.
+
+\bibitem[{TOON Contributors}(2024)]{toon2024}
+{TOON Contributors}.
+\newblock {TOON}: Token-oriented object notation.
+\newblock \url{https://github.com/toon-format/toon}, 2024.
+
+\bibitem[Wei et~al.(2022)Wei, Wang, Schuurmans, Bosma, Ichter, Xia, Chi, Le,
+  and Zhou]{wei2022cot}
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia,
+  Ed~Chi, Quoc Le, and Denny Zhou.
+\newblock Chain-of-thought prompting elicits reasoning in large language
+  models.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2022.
+
+\end{thebibliography}
