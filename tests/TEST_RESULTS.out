@@ -1,0 +1,59 @@
+WCY-2 reference modules - frozen test run
+command: python -X utf8 -m unittest discover tests -v
+python : 3.14.0 (Windows)
+modules: wcy_parser.py v2.0 (WCY-2), wcy_merge.py v2.0
+corpus : data/*.jsonl - 540 rows, 552 WCY documents, 13826 lines re-parsed
+----------------------------------------------------------------------
+test_agent_documents (test_wcy2.TestAppendixB.test_agent_documents) ... ok
+test_conflict_is_surfaced_with_provenance_union (test_wcy2.TestAppendixB.test_conflict_is_surfaced_with_provenance_union) ... ok
+test_merge_order_does_not_matter (test_wcy2.TestAppendixB.test_merge_order_does_not_matter) ... ok
+test_nothing_is_lost_by_the_merge (test_wcy2.TestAppendixB.test_nothing_is_lost_by_the_merge) ... ok
+test_records_are_appended_never_merged (test_wcy2.TestAppendixB.test_records_are_appended_never_merged) ... ok
+test_resolution_moves_the_atom_and_keeps_the_record (test_wcy2.TestAppendixB.test_resolution_moves_the_atom_and_keeps_the_record) ... ok
+test_strict_resolution_checks_the_was_field (test_wcy2.TestAppendixB.test_strict_resolution_checks_the_was_field) ... ok
+test_conflict_is_never_coerced (test_wcy2.TestJSONInterop.test_conflict_is_never_coerced) ... ok
+test_embedding_round_trips_through_projection (test_wcy2.TestJSONInterop.test_embedding_round_trips_through_projection) ... ok
+test_multiple_asserted_values_are_flagged_not_picked (test_wcy2.TestJSONInterop.test_multiple_asserted_values_are_flagged_not_picked) ... ok
+test_null_becomes_unknown_and_leaves_become_asserted (test_wcy2.TestJSONInterop.test_null_becomes_unknown_and_leaves_become_asserted) ... ok
+test_projection_after_resolution_is_clean (test_wcy2.TestJSONInterop.test_projection_after_resolution_is_clean) ... ok
+test_projection_is_left_inverse_of_embedding (test_wcy2.TestJSONInterop.test_projection_is_left_inverse_of_embedding) ... ok
+test_refuted_is_omitted_with_sidecar (test_wcy2.TestJSONInterop.test_refuted_is_omitted_with_sidecar) ... ok
+test_scalar_and_empty_roots (test_wcy2.TestJSONInterop.test_scalar_and_empty_roots) ... ok
+test_unknown_projects_to_null_with_sidecar (test_wcy2.TestJSONInterop.test_unknown_projects_to_null_with_sidecar) ... ok
+test_conflict_is_a_value_not_an_exception (test_wcy2.TestMergeLaws.test_conflict_is_a_value_not_an_exception) ... ok
+test_document_merge_is_commutative_and_associative (test_wcy2.TestMergeLaws.test_document_merge_is_commutative_and_associative) ... ok
+test_document_merge_is_idempotent (test_wcy2.TestMergeLaws.test_document_merge_is_idempotent) ... ok
+test_information_order (test_wcy2.TestMergeLaws.test_information_order) ... ok
+test_law_names_match_the_lean_theorems (test_wcy2.TestMergeLaws.test_law_names_match_the_lean_theorems) ... ok
+test_levels_are_not_compressed (test_wcy2.TestMergeLaws.test_levels_are_not_compressed) ... ok
+test_meet_is_the_dual (test_wcy2.TestMergeLaws.test_meet_is_the_dual) ... ok
+test_state_table (test_wcy2.TestMergeLaws.test_state_table) ... ok
+test_unmatched_tags_union (test_wcy2.TestMergeLaws.test_unmatched_tags_union) ... ok
+test_verify_laws_passes (test_wcy2.TestMergeLaws.test_verify_laws_passes) ... ok
+test_corpus_carries_voids (test_wcy2.TestV1Compatibility.test_corpus_carries_voids) ... ok
+test_corpus_is_present (test_wcy2.TestV1Compatibility.test_corpus_is_present) ... ok
+test_every_trace_still_parses (test_wcy2.TestV1Compatibility.test_every_trace_still_parses) ... ok
+test_v1_fields_unchanged (test_wcy2.TestV1Compatibility.test_v1_fields_unchanged)
+Every v1 field of every line matches the v1 grammar exactly. ... ok
+test_v1_utilities_still_work (test_wcy2.TestV1Compatibility.test_v1_utilities_still_work) ... ok
+test_v2_fields_take_defaults_on_v1_documents (test_wcy2.TestV1Compatibility.test_v2_fields_take_defaults_on_v1_documents) ... ok
+test_all_four_rails (test_wcy2.TestV2Syntax.test_all_four_rails) ... ok
+test_bare_value_is_asserting (test_wcy2.TestV2Syntax.test_bare_value_is_asserting) ... ok
+test_keywords_are_phase_scoped (test_wcy2.TestV2Syntax.test_keywords_are_phase_scoped)
+v1's `> resolve ...` act lines keep their v1 meaning. ... ok
+test_level_tag (test_wcy2.TestV2Syntax.test_level_tag) ... ok
+test_obstruction_record (test_wcy2.TestV2Syntax.test_obstruction_record) ... ok
+test_quoted_value_is_opaque (test_wcy2.TestV2Syntax.test_quoted_value_is_opaque) ... ok
+test_rail_marker_must_end_the_token (test_wcy2.TestV2Syntax.test_rail_marker_must_end_the_token)
+Math text such as A^T*lambda is not a rail suffix (v1 corpus). ... ok
+test_rail_suffix_on_positional_slot (test_wcy2.TestV2Syntax.test_rail_suffix_on_positional_slot) ... ok
+test_rail_suffix_on_tag_value (test_wcy2.TestV2Syntax.test_rail_suffix_on_tag_value) ... ok
+test_record_utilities (test_wcy2.TestV2Syntax.test_record_utilities) ... ok
+test_refutation_sugar_equals_rail_f (test_wcy2.TestV2Syntax.test_refutation_sugar_equals_rail_f) ... ok
+test_resolve_record (test_wcy2.TestV2Syntax.test_resolve_record) ... ok
+test_void_slot_is_unknown_rail (test_wcy2.TestV2Syntax.test_void_slot_is_unknown_rail) ... ok
+
+----------------------------------------------------------------------
+Ran 45 tests in 2.125s
+
+OK

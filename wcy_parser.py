@@ -1,11 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-wcy_parser.py — WCY Reference Parser v1.1
+wcy_parser.py — WCY Reference Parser v2.0, WCY-2
     Changelog:
       v1.1:   | separator support
       v1.1.1: fix validate() dead code, fix reconstruct() block gap
+      v2.0:   WCY-2 surface additions (SPEC.md section 4.2):
+                - rail suffix on values:  tag=value^T | ^F | ^U | ^C
+                - refutation slot:        tag!=value   (sugar for =value^F)
+                - level tag:              lvl=m
+                - resolution record:      : resolve tag was= now= from= why=
+                - obstruction record:     ! obstruction tag from= note=
+              plus non-numeric `from=` provenance labels (from_labels).
 ==========================================
 Reference implementation of the WCY (Watch → Compute → Yield) format.
+
+Backward compatibility (SPEC.md section 11.3): a v1 document is a Core
+v2 document. Every v1 field of WCYSlot / WCYLine keeps its v1 meaning and
+its v1 value; v2 adds fields only, all with defaults. The v2 additions
+change a parse result only for documents that actually use v2 syntax.
 
 Usage:
     from wcy_parser import parse_wcy, resolve_chain, extract_voids, WCYLine
@@ -13,6 +25,11 @@ Usage:
     lines = parse_wcy(text)
     chain = resolve_chain(lines, target_line=8)
     voids = extract_voids(lines)
+
+    # v2
+    lines = parse_wcy(". allergy=penicillin^C\\n: resolve allergy was=C now=F")
+    lines[0].slots[0].rail   # 'C'
+    lines[1].kind            # 'resolve'
 """
 
 from __future__ import annotations
@@ -33,16 +50,62 @@ PHASE_MARKERS = {
 
 MAX_DEPTH = 2  # WCY spec: maximum nesting depth
 
+# ── v2 constants (SPEC.md sections 3.1, 4.2) ────────────────────────────────
+
+RAIL_STATES = ('T', 'F', 'U', 'C')  # assert / refute / unknown / conflict
+
+DEFAULT_RAIL = 'T'   # a bare tag=value is asserting (SPEC 4.2)
+VOID_RAIL    = 'U'   # ?tag is an explicitly represented unknown (SPEC 11.3)
+
+# Reserved v2 keywords, per phase marker (Appendix A).
+RESERVED_KEYWORDS = {
+    ':': 'resolve',       # resolution record   (SPEC 7.1)
+    '!': 'obstruction',   # obstruction record  (SPEC 7.3)
+}
+
 
 # ── Data Classes ────────────────────────────────────────────────────────────
 
 @dataclass
 class WCYSlot:
-    """A single slot: tag=value pair or a positional bare value."""
+    """A single slot: tag=value pair or a positional bare value.
+
+    v2: `rail` records the dual-rail state of the slot's evidence
+    (SPEC 3.1, 4.2). 'T' assert, 'F' refute, 'U' unknown, 'C' conflict.
+    A bare `tag=value` is 'T'; `tag!=value` is 'F'; `?tag` is 'U'; an
+    explicit `^X` suffix wins over all of these.
+    """
     key: str | None       # tag name (None = positional slot)
     value: str            # slot value
     is_void: bool = False # True if this is a void-B ?tag marker
     position: int = 0     # order among positional slots (0-indexed)
+    rail: str = DEFAULT_RAIL  # v2: 'T' | 'F' | 'U' | 'C'
+
+
+@dataclass
+class WCYRecord:
+    """A v2 resolution or obstruction record (SPEC 7.1, 7.3).
+
+    Attached to a WCYLine whose `kind` is 'resolve' or 'obstruction'.
+    `was` / `now` are rail-state letters as written in the record.
+    """
+    kind: str                    # 'resolve' | 'obstruction'
+    target: str | None = None    # the tag the record is about
+    was: str | None = None       # resolve: prior state ('U' | 'C' | ...)
+    now: str | None = None       # resolve: new state ('T' | 'F')
+    why: str | None = None       # resolve: justification
+    note: str | None = None      # obstruction: failure note
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-compatible dict."""
+        return {
+            'kind':   self.kind,
+            'target': self.target,
+            'was':    self.was,
+            'now':    self.now,
+            'why':    self.why,
+            'note':   self.note,
+        }
 
 
 @dataclass
@@ -61,6 +124,11 @@ class WCYLine:
     conf_range: tuple[float, float] | None = None         # conf_range=0.4..0.8
     block_index: int = 0                                  # block number (increments on blank line)
     children: list[WCYLine] = field(default_factory=list) # indented child lines
+    # ── v2 additions (all defaulted; v1 documents keep v1 values) ──────────
+    lvl: int = 1                                          # lvl=m level tag (SPEC 8)
+    kind: str = 'normal'                                  # 'normal'|'resolve'|'obstruction'
+    record: WCYRecord | None = None                       # parsed record fields
+    from_labels: list[str] = field(default_factory=list)  # non-numeric from= sources
 
     @property
     def is_void(self) -> bool:
@@ -86,7 +154,8 @@ class WCYLine:
             'phase':       self.phase,
             'phase_name':  self.phase_name,
             'depth':       self.depth,
-            'slots':       [{'key': s.key, 'value': s.value, 'is_void': s.is_void}
+            'slots':       [{'key': s.key, 'value': s.value, 'is_void': s.is_void,
+                             'rail': s.rail}
                             for s in self.slots],
             'tags':        self.tags,
             'void_tags':   self.void_tags,
@@ -94,6 +163,11 @@ class WCYLine:
             'conf':        self.conf,
             'conf_range':  list(self.conf_range) if self.conf_range else None,
             'block_index': self.block_index,
+            # v2
+            'lvl':         self.lvl,
+            'kind':        self.kind,
+            'record':      self.record.to_dict() if self.record else None,
+            'from_labels': self.from_labels,
         }
 
     def __repr__(self) -> str:
@@ -115,6 +189,31 @@ _TAGVAL_RE  = re.compile(r'^(\w[\w\-\.]*)\s*=\s*(.+)$')
 _VOID_RE    = re.compile(r'^\?(\w+)$')
 _BACKREF_RE = re.compile(r'^\{(\d+)\}$')
 _CONF_RE    = re.compile(r'^([\d.]+)\.\.([\d.]+)$')
+# v2
+_REFUTE_RE  = re.compile(r'^(\w[\w\-\.]*)\s*!=\s*(.+)$')   # tag!=value
+_RAIL_RE    = re.compile(r'^(.+)\^([TFUC])$')              # value^T | ^F | ^U | ^C
+
+
+def _split_rail(value: str) -> tuple[str, str | None]:
+    """
+    Split a trailing v2 rail suffix off a value (SPEC 4.2).
+
+    'penicillin^C'  → ('penicillin', 'C')
+    'A^T*lambda'    → ('A^T*lambda', None)   (suffix must end the value)
+    '"a^T"'         → ('"a^T"', None)        (fully quoted values are opaque)
+    """
+    if _QUOTED_RE.match(value):
+        return value, None
+    m = _RAIL_RE.match(value)
+    if m:
+        return m.group(1), m.group(2)
+    return value, None
+
+
+def _unquote(value: str) -> str:
+    """Strip one layer of surrounding double quotes, if present."""
+    qm = _QUOTED_RE.match(value)
+    return qm.group(1) if qm else value
 
 
 def _parse_slot(token: str, pos_index: int) -> WCYSlot | None:
@@ -129,37 +228,49 @@ def _parse_slot(token: str, pos_index: int) -> WCYSlot | None:
     # ?tag (void-B)
     m = _VOID_RE.match(token)
     if m:
-        return WCYSlot(key=m.group(1), value='', is_void=True, position=pos_index)
+        return WCYSlot(key=m.group(1), value='', is_void=True,
+                       position=pos_index, rail=VOID_RAIL)
+
+    # tag!=value  (v2 refutation sugar for tag=value^F)
+    m = _REFUTE_RE.match(token)
+    if m:
+        key, val = m.group(1), m.group(2).strip()
+        val, rail = _split_rail(val)
+        return WCYSlot(key=key, value=_unquote(val), position=pos_index,
+                       rail=rail or 'F')
 
     # tag=value
     m = _TAGVAL_RE.match(token)
     if m:
         key, val = m.group(1), m.group(2).strip()
+        val, rail = _split_rail(val)
         # strip surrounding quotes
-        qm = _QUOTED_RE.match(val)
-        if qm:
-            val = qm.group(1)
-        return WCYSlot(key=key, value=val, position=pos_index)
+        return WCYSlot(key=key, value=_unquote(val), position=pos_index,
+                       rail=rail or DEFAULT_RAIL)
 
     # {N} back-reference
     m = _BACKREF_RE.match(token)
     if m:
         return WCYSlot(key='__backref__', value=m.group(1), position=pos_index)
 
-    # bare positional value (may be quoted)
-    qm = _QUOTED_RE.match(token)
-    val = qm.group(1) if qm else token
-    return WCYSlot(key=None, value=val, position=pos_index)
+    # bare positional value (may be quoted, may carry a v2 rail suffix)
+    val, rail = _split_rail(token)
+    return WCYSlot(key=None, value=_unquote(val), position=pos_index,
+                   rail=rail or DEFAULT_RAIL)
 
 
 def _parse_slots(rest: str) -> tuple[
     list[WCYSlot], dict[str, str],
     list[str], list[int],
-    float | None, tuple[float, float] | None
+    float | None, tuple[float, float] | None,
+    list[str]
 ]:
     """
     Parse the remainder of a line after the phase marker.
-    Returns: (slots, tags, void_tags, from_refs, conf, conf_range)
+    Returns: (slots, tags, void_tags, from_refs, conf, conf_range, from_labels)
+
+    v2: non-numeric `from=` sources (e.g. `from=intake_form`) are collected
+    into from_labels; from_refs keeps its v1 meaning (line numbers only).
     """
     # Tokenize on whitespace / pipe, protecting quoted strings.
     # | = optional slot separator (spec v1.1)
@@ -187,6 +298,7 @@ def _parse_slots(rest: str) -> tuple[
     tags: dict[str, str] = {}
     void_tags: list[str] = []
     from_refs: list[int] = []
+    from_labels: list[str] = []
     conf: float | None = None
     conf_range: tuple[float, float] | None = None
     pos_index = 0
@@ -203,6 +315,8 @@ def _parse_slots(rest: str) -> tuple[
                 n = n.strip()
                 if n.isdigit():
                     from_refs.append(int(n))
+                elif n:
+                    from_labels.append(n)   # v2: named provenance source
             continue
 
         # conf_range=0.4..0.8
@@ -226,7 +340,8 @@ def _parse_slots(rest: str) -> tuple[
         if m:
             tag_name = m.group(1)
             void_tags.append(tag_name)
-            slots.append(WCYSlot(key=tag_name, value='', is_void=True, position=pos_index))
+            slots.append(WCYSlot(key=tag_name, value='', is_void=True,
+                                 position=pos_index, rail=VOID_RAIL))
             pos_index += 1
             continue
 
@@ -238,10 +353,56 @@ def _parse_slots(rest: str) -> tuple[
                 tags[slot.key] = slot.value
             pos_index += 1
 
-    return slots, tags, void_tags, from_refs, conf, conf_range
+    return slots, tags, void_tags, from_refs, conf, conf_range, from_labels
 
 
 # ── Line Parser ─────────────────────────────────────────────────────────────
+
+def _parse_level(tags: dict[str, str]) -> int:
+    """Read the v2 `lvl=m` grade off a line's tags (SPEC 4.2, 8). Default 1."""
+    raw = tags.get('lvl')
+    if raw is not None and raw.isdigit():
+        m = int(raw)
+        if m >= 1:
+            return m
+    return 1
+
+
+def _parse_record(phase: str, slots: list[WCYSlot],
+                  tags: dict[str, str]) -> WCYRecord | None:
+    """
+    Detect a v2 resolution / obstruction record (SPEC 7.1, 7.3).
+
+    A record is an infer line whose first positional slot is the reserved
+    keyword `resolve`, or an exception line whose first positional slot is
+    `obstruction`. The keyword is reserved per phase marker, so v1's
+    `> resolve ...` act lines and `: resolved=...` tags are untouched.
+    The record's target tag is the next positional slot (or `tag=`).
+    """
+    keyword = RESERVED_KEYWORDS.get(phase)
+    if keyword is None:
+        return None
+
+    positional = [s for s in slots if s.key is None and not s.is_void]
+    if not positional or positional[0].value != keyword:
+        return None
+
+    target = positional[1].value if len(positional) > 1 else tags.get('tag')
+
+    if keyword == 'resolve':
+        return WCYRecord(
+            kind='resolve',
+            target=target,
+            was=tags.get('was'),
+            now=tags.get('now'),
+            why=tags.get('why'),
+        )
+    return WCYRecord(
+        kind='obstruction',
+        target=target,
+        note=tags.get('note'),
+    )
+
 
 def _measure_depth(raw_line: str) -> int:
     """Measure indent depth (2 spaces = 1 level)."""
@@ -270,7 +431,10 @@ def _parse_line(raw: str, line_num: int, block_index: int) -> WCYLine | None:
         return None
 
     rest = stripped[2:].strip()
-    slots, tags, void_tags, from_refs, conf, conf_range = _parse_slots(rest)
+    (slots, tags, void_tags, from_refs,
+     conf, conf_range, from_labels) = _parse_slots(rest)
+
+    record = _parse_record(phase, slots, tags)
 
     return WCYLine(
         line_num=line_num,
@@ -285,6 +449,10 @@ def _parse_line(raw: str, line_num: int, block_index: int) -> WCYLine | None:
         conf=conf,
         conf_range=conf_range,
         block_index=block_index,
+        lvl=_parse_level(tags),
+        kind=record.kind if record else 'normal',
+        record=record,
+        from_labels=from_labels,
     )
 
 
@@ -448,6 +616,40 @@ def void_summary(lines: list[WCYLine]) -> dict[str, Any]:
     return {'total': len(summary), 'voids': summary}
 
 
+# ── v2 Record Utilities (SPEC 7) ────────────────────────────────────────────
+
+def extract_records(lines: list[WCYLine], kind: str | None = None) -> list[WCYLine]:
+    """
+    Return all lines carrying a v2 record (SPEC 7.1, 7.3).
+
+    Args:
+        lines: result of parse_wcy()
+        kind:  'resolve' | 'obstruction' | None (both)
+
+    Returns:
+        List of WCYLine objects whose kind is a record kind.
+    """
+    flat = flatten(lines) if any(l.children for l in lines) else lines
+    if kind is None:
+        return [l for l in flat if l.kind != 'normal']
+    return [l for l in flat if l.kind == kind]
+
+
+def audit_trail(lines: list[WCYLine]) -> list[dict[str, Any]]:
+    """
+    The minimal audit surface of a document (SPEC 7.2): the resolution and
+    obstruction records, in document order, with their provenance.
+    """
+    trail: list[dict[str, Any]] = []
+    for line in extract_records(lines):
+        entry = line.record.to_dict() if line.record else {'kind': line.kind}
+        entry['line'] = line.line_num
+        entry['from_refs'] = list(line.from_refs)
+        entry['from_labels'] = list(line.from_labels)
+        trail.append(entry)
+    return trail
+
+
 # ── Block / Context Utilities ───────────────────────────────────────────────
 
 def get_block(lines: list[WCYLine], block_index: int) -> list[WCYLine]:
@@ -594,8 +796,16 @@ if __name__ == '__main__':
 > activate  cath_lab  priority=emergent  from=10
 """.strip()
 
+    SAMPLE_V2 = """
+~ schema patient  fields=id,dx,allergy   lvl=1
+. allergy=penicillin^C  from=2,5
+. sensor_ok!=timeout
+: resolve allergy  was=C  now=F  from=3  why=skin_test_negative
+! obstruction dx  from=3  note=imaging_unavailable
+""".strip()
+
     print("=" * 60)
-    print("  WCY Parser v1.1 — Quick Test")
+    print("  WCY Parser v2.0 (WCY-2) — Quick Test")
     print("=" * 60)
 
     lines = parse_wcy(SAMPLE)
@@ -636,3 +846,17 @@ if __name__ == '__main__':
     print(f"\n[to_dict_list] sample (first line):")
     import json
     print(f"  {json.dumps(to_dict_list(flat)[:1], ensure_ascii=False, indent=2)}")
+
+    print("\n" + "=" * 60)
+    print("  v2 additions (SPEC section 4.2)")
+    print("=" * 60)
+
+    v2 = flatten(parse_wcy(SAMPLE_V2))
+    for l in v2:
+        rails = " ".join(f"{s.key or s.value}^{s.rail}"
+                         for s in l.slots if not s.is_void)
+        print(f"  #{l.line_num} {l.phase} lvl={l.lvl} kind={l.kind:<11} {rails}")
+
+    print(f"\n[audit_trail] → {len(audit_trail(v2))} record(s)")
+    for entry in audit_trail(v2):
+        print(f"  {entry}")

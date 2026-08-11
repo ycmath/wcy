@@ -1,0 +1,5 @@
+name = "WcyMerge"
+defaultTargets = ["WcyMerge"]
+
+[[lean_lib]]
+name = "WcyMerge"
