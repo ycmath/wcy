@@ -3,7 +3,7 @@
 **A token-native reasoning format with theorem-backed semantics.**
 
 [![DOI (Paper)](https://zenodo.org/badge/DOI/10.5281/zenodo.19068378.svg)](https://doi.org/10.5281/zenodo.19068378)
-[![DOI (Dataset)](https://zenodo.org/badge/DOI/10.5281/zenodo.19068769.svg)](https://doi.org/10.5281/zenodo.19068769)
+[![DOI (Dataset)](https://zenodo.org/badge/DOI/10.5281/zenodo.19068768.svg)](https://doi.org/10.5281/zenodo.19068768)
 [![DOI (Repository, v2)](https://zenodo.org/badge/DOI/10.5281/zenodo.21886552.svg)](https://doi.org/10.5281/zenodo.21886552)
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
@@ -82,11 +82,15 @@ Two corpora ship with this repository:
 
 - **WCY v1 — 540 reasoning traces** (`data/`). The original corpus:
   line-oriented, phase-tagged agent reasoning, 100% parse rate, published as
-  [10.5281/zenodo.19068769](https://doi.org/10.5281/zenodo.19068769).
+  [10.5281/zenodo.19068769](https://doi.org/10.5281/zenodo.19068769) (v1.1).
 - **WCY-2 — 379 traces** (`data_v2/`). v1 traces re-encoded under the
   theorem-backed v2 semantics (317), plus natively-authored v2 traces
   exercising merge-conflict resolution (18), level refinement (9),
   safe-fragment query discipline (14), and schema evolution (21).
+  Published as [10.5281/zenodo.19089743](https://doi.org/10.5281/zenodo.19089743)
+  (v2.0; concept DOI [10.5281/zenodo.19068768](https://doi.org/10.5281/zenodo.19068768)
+  resolves to the latest version). Also on
+  [Hugging Face](https://huggingface.co/datasets/ycmath/wcy-reasoning-traces).
 
 Every v2 trace passed nine mechanical gates and an LLM audit.
 **145 of the 379 v2 traces (38%) have `corrected_from_v1: true`** — their
