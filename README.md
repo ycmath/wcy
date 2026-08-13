@@ -76,6 +76,27 @@ The v2 semantic layer adds no surface tokens to resolved-face documents,
 so these figures carry over; conflict and level annotations cost tokens
 only where the corresponding information exists.
 
+## Dataset
+
+Two corpora ship with this repository:
+
+- **WCY v1 — 540 reasoning traces** (`data/`). The original corpus:
+  line-oriented, phase-tagged agent reasoning, 100% parse rate, published as
+  [10.5281/zenodo.19068769](https://doi.org/10.5281/zenodo.19068769).
+- **WCY-2 — 379 traces** (`data_v2/`). v1 traces re-encoded under the
+  theorem-backed v2 semantics (317), plus natively-authored v2 traces
+  exercising merge-conflict resolution (18), level refinement (9),
+  safe-fragment query discipline (14), and schema evolution (21).
+
+Every v2 trace passed nine mechanical gates and an LLM audit.
+**145 of the 379 v2 traces (38%) have `corrected_from_v1: true`** — their
+domain content was altered relative to the v1 source, not merely re-encoded,
+because the audit found factual defects (some inherited from the v1 source
+text, some introduced during re-encoding). The v2 corpus is consequently
+*not* a faithful re-encoding of v1, and any comparison between the two must
+account for those rows. Full composition, gate definitions, and the
+correction disclosure are in [`data_v2/DATASET_v2.md`](data_v2/DATASET_v2.md).
+
 ## Quick example (merge, conflict, resolution)
 
 ```
@@ -105,6 +126,9 @@ lean/wcymerge/                  Kernel-checked merge laws: 10 theorems,
                                 all axiom-free (Lean 4, core only)
 tests/                          v1-compat + v2 semantics test suite
 data/                           v1 trace corpus (540 traces)
+data_v2/                        WCY-2 corpus (379 traces, 9-gate + audited;
+                                see DATASET_v2.md for the correction
+                                disclosure)
 experiments/                    v1 experiment scripts
 papers/                         papers; second_edition/ = the v2 paper
                                 (Zenodo: 10.5281/zenodo.19068378, latest)

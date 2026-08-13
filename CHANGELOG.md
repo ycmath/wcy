@@ -7,6 +7,13 @@ layer. See SPEC.md for the full specification and its normative
 references (the Dual-Rail Carrier Program DOIs).
 
 Added:
+- data_v2/ — 379 WCY-2 reasoning traces: 317 v1 traces re-encoded under
+  v2 semantics, plus 62 natively-authored v2 traces across the four
+  scenario families (merge-conflict, level refinement, safe-fragment
+  query, schema evolution). All traces passed nine mechanical gates plus
+  an LLM audit. 145 traces (38%) carry `corrected_from_v1: true`,
+  indicating domain content altered relative to the v1 source; see
+  data_v2/DATASET_v2.md for the disclosure and per-row provenance fields.
 - SPEC.md — the WCY-2 specification, draft v0.1: dual-rail value model
   (unknown ≠ conflict), railwise-join merge (CRDT laws), monotone
   mutation discipline (retraction = refuting evidence; no deletion),
